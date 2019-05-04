@@ -17,26 +17,18 @@ import numpy as np
 
 use_gpu = torch.cuda.is_available()
 
-file_root = '/home/xzh/data/VOCdevkit/VOC2012/allimgs/'
-learning_rate = 0.001
-num_epochs =  50
-batch_size = 24
 
-net = vgg16_bn ()
 
-print(net)
-
-vgg = models.vgg16_bn(pretrained=True)
-    new_state_dict = vgg.state_dict()
-    dd = net.state_dict()
-    for k in new_state_dict.keys():
-        print(k)
-        if k in dd.keys() and k.startswith('features'):
-            print('yes')
-            dd[k] = new_state_dict[k]
-    net.load_state_dict(dd)
-ow  False :
-    net.load_state_dict(torch.load('best.pth'))
+net 		   = vgg16_bn()
+vgg            = models.vgg16_bn(pretrained=True)
+new_state_dict = vgg.state_dict()
+dd             = net.state_dict()
+for k in new_state_dict.keys():
+	print(k)
+	if k in dd.keys() and k.startswith('features'):
+		print('yes')
+		dd[k] = new_state_dict[k]
+net.load_state_dict(dd)
 print('cuda', torch.cuda.current_device(), torch.cuda.device_count())
 
 criterion = yoloLoss(7,2,5,0.5)
@@ -69,36 +61,49 @@ num_iter =  0
 vis = Visualizer(env='xiong')
 best_test_loss = np.inf
 
-for epoch in range(num_epochs):
-    net.train()
-	if epoch == 30:
-        learning_rate=0.0001
-    if epoch == 40:
-        learning_rate=0.00001
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = learning_rate
-    
-    print ( ' \ n \ n Starting epoch % d / % d '  % (epoch +  1 , num_epochs))
-    print('Learning Rate for this epoch: {}'.format(learning_rate))
-    
-    total_loss = 0.
-	
-	
-for i,(images,target) in enumerate(train_loader):
-        images = Variable(images)
-        target = Variable(target)
-        if use_gpu:
-            images,target = images.cuda(),target.cuda()
-        
-        pred = net(images)
-        loss = criterion(pred,target)
-        total_loss += loss.data[0]
-        
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        if (i+1) % 5 == 0:
-            print ('Epoch [%d/%d], Iter [%d/%d] Loss: %.4f, average_loss: %.4f' 
-            %(epoch+1, num_epochs, i+1, len(train_loader), loss.data[0], total_loss / (i+1)))
-            num_iter +  1
-            vis.plot_train_val(loss_train=total_loss/(i+1))
+def myNet():
+	pass
+
+def train():
+	pass
+
+if __name__ == ""__main__":
+
+	file_root = '/home/xzh/data/VOCdevkit/VOC2012/allimgs/'
+	learning_rate = 0.001
+	num_epochs =  50
+	batch_size = 24
+
+	for epoch in range(num_epochs):
+		net.train()
+		if epoch == 30:
+			learning_rate=0.0001
+		if epoch == 40:
+			learning_rate=0.00001
+		for param_group in optimizer.param_groups:
+			param_group['lr'] = learning_rate
+		
+		print ( ' \ n \ n Starting epoch % d / % d '  % (epoch +  1 , num_epochs))
+		print('Learning Rate for this epoch: {}'.format(learning_rate))
+		
+		total_loss = 0.
+		
+		
+	for i,(images,target) in enumerate(train_loader):
+			images = Variable(images)
+			target = Variable(target)
+			if use_gpu:
+				images,target = images.cuda(),target.cuda()
+			
+			pred = net(images)
+			loss = criterion(pred,target)
+			total_loss += loss.data[0]
+			
+			optimizer.zero_grad()
+			loss.backward()
+			optimizer.step()
+			if (i+1) % 5 == 0:
+				print ('Epoch [%d/%d], Iter [%d/%d] Loss: %.4f, average_loss: %.4f' 
+				%(epoch+1, num_epochs, i+1, len(train_loader), loss.data[0], total_loss / (i+1)))
+				num_iter +  1
+				vis.plot_train_val(loss_train=total_loss/(i+1))
