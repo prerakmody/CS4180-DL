@@ -1,19 +1,20 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+import numpy as np
+
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
 from torchvision import models
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
+import torchvision.transforms as transforms
 
-from net import vgg16, vgg16_bn
+from nets import vgg16, vgg16_bn
 from resnet_yolo import resnet50, resnet18
 from yoloLoss import yoloLoss
 from dataset import yoloDataset
-
 from visualize import Visualizer
-import numpy as np
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 use_gpu = torch.cuda.is_available()
 
@@ -36,6 +37,7 @@ if use_gpu:
     net.cuda ()
 
 net.train()
+
 # different learning rate
 params=[]
 params_dict = dict(net.named_parameters())
