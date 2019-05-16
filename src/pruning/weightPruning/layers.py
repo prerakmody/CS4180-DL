@@ -9,6 +9,7 @@ class MaskedLinear(nn.Linear):
     def __init__(self, in_features, out_features, bias=True):
         super(MaskedLinear, self).__init__(in_features, out_features, bias)
         self.mask_flag = False
+        self.name = 'MaskedLinear'
     
     def set_mask(self, mask):
         self.register_buffer('mask', mask)
@@ -35,6 +36,7 @@ class MaskedConv2d(nn.Conv2d):
         super(MaskedConv2d, self).__init__(in_channels, out_channels, 
             kernel_size, stride, padding, dilation, groups, bias)
         self.mask_flag = False
+        self.name = 'MaskedConv2d'
     
     def set_mask(self, mask):
         self.register_buffer('mask', mask)

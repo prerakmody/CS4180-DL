@@ -50,8 +50,8 @@ class YOLOv1Train():
                 print ('  -- [TRAIN] [Loss] Val   : ', checkpoint['loss_val'])
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            else:
-                epoch_start = 0
+        else:
+            epoch_start = 0
         
         model.train()
         for epoch in range(epoch_start,EPOCHS):
