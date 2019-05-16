@@ -275,12 +275,6 @@ class YoloDataset(data.Dataset):
             im = im.clip(min=0,max=255).astype(np.uint8)
         return im
 
-    def subMean(self,bgr,mean):
-        mean = np.array(mean, dtype=np.float32)
-        bgr = bgr - mean
-        return bgr
-
-
     def display(self, X):
         plt.imshow(X.data.numpy().transpose(1,2,0))
     
