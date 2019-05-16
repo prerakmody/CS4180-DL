@@ -20,11 +20,6 @@ class YOLOv1Train():
 
         if USE_GPU:
             model.cuda ()
-        
-        if LOGGER != '':
-            LOGGER.flush_line('Lossses')
-            LOGGER.flush_line('Losses')
-		
 		
 		# different learning rate
         params      = []
@@ -39,6 +34,7 @@ class YOLOv1Train():
             optimizer = torch.optim.SGD(params, lr=LEARNING_RATE, momentum=0.9, weight_decay=5e-4)
         
         print ('')
+        epoch_start = 0
         if (CHKP_LOAD):
             path_model = os.path.join(CHKP_DIR, CHKP_NAME)
             if os.path.exists(path_model):
@@ -47,17 +43,18 @@ class YOLOv1Train():
                 epoch_start = checkpoint['epoch']
                 print ('  -- [TRAIN] Start Epoch : ', epoch_start)
                 print ('  -- [TRAIN][Loss] Train : ', checkpoint['loss_train'])
-                print ('  -- [TRAIN] [Loss] Val   : ', checkpoint['loss_val'])
+                print ('  -- [TRAIN][Loss] Val   : ', checkpoint['loss_val'])
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        else:
-            epoch_start = 0
-        
+                print ('')
+
         model.train()
         for epoch in range(epoch_start,EPOCHS):
-            if epoch == 30:
+            print ('')
+            print (' --------------------------------------------------------- ')
+            if epoch >= 30:
                 LEARNING_RATE = 0.0001
-            if epoch == 40:
+            if epoch >= 40:
                 LEARNING_RATE = 0.00001
             for param_group in optimizer.param_groups:
                 param_group['lr'] = LEARNING_RATE
@@ -145,7 +142,7 @@ class YOLOv1Train():
                 CHKP_NAME_ = str(CHKP_NAME)
                 CHKP_NAME_ = CHKP_NAME_.split('_')[0] + '_epoch%.3d.pkl' % (epoch+1)
                 torch.save({
-                    'epoch'                : epoch,
+                    'epoch'                : epoch + 1,
                     'model_state_dict'     : model.state_dict(),
                     'optimizer_state_dict' : optimizer.state_dict(),
                     'loss_train'           : train_loss_total,
