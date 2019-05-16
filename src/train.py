@@ -21,7 +21,6 @@ class YOLOv1Train():
         if USE_GPU:
             model.cuda ()
 		
-		
 		# different learning rate
         params      = []
         params_dict = dict(model.named_parameters())

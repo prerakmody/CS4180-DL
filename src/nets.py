@@ -8,6 +8,7 @@ import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
 
+from pruning.weightPruning.layers import MaskedLinear
 
 cfg = {
     'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
@@ -41,11 +42,15 @@ class YOLOv1(nn.Module):
         super(YOLOv1, self).__init__()
         self.name       = name
         self.features   = self.getFeatureLayers(cfg, batch_norm)
+        self.linear1    = MaskedLinear(512 * 7 * 7, 4096)
+        self.linear2    = MaskedLinear(4096, 1470)
         self.classifier = nn.Sequential( # add the regression part to the features
-            nn.Linear(512 * 7 * 7, 4096),
+            # nn.Linear(512 * 7 * 7, 4096),
+            self.linear1,
             nn.ReLU(True),
             nn.Dropout(),
-            nn.Linear(4096, 1470),
+            # nn.Linear(4096, 1470),
+            self.linear2,
         )
         self._initialize_weights()
         self.image_size = image_size
@@ -101,6 +106,9 @@ class YOLOv1(nn.Module):
                 params_in_channels = item
         return nn.Sequential(*layers)
 
+    def set_masks(self, masks):
+        self.linear1.set_mask(masks[0])
+        self.linear2.set_mask(masks[1])
 
 def test():
     net = getYOLOv1()
