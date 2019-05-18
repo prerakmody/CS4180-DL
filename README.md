@@ -53,5 +53,5 @@ There are two ways of doing this.
 
 # Other useful links (GCP VM)
 [help1] (https://medium.com/@kn.maragatham09/installing-jupyter-notebook-on-google-cloud-11979e40cd10).
-[help2](https://medium.com/@jamsawamsa/running-a-google-cloud-gpu-for-fast-ai-for-free-5f89c707bae6).
-[How to make Virtual Env](https://www.digitalocean.com/community/tutorials/how-to-set-up-jupyter-notebook-with-python-3-on-ubuntu-18-04).
+[help2] (https://medium.com/@jamsawamsa/running-a-google-cloud-gpu-for-fast-ai-for-free-5f89c707bae6).
+[How to make Virtual Env] (https://www.digitalocean.com/community/tutorials/how-to-set-up-jupyter-notebook-with-python-3-on-ubuntu-18-04).
