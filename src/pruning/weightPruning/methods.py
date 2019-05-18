@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from weightPruning.utils import prune_rate, arg_nonzero_min
+from src.pruning.weightPruning.utils import prune_rate, arg_nonzero_min
 
 
 def weight_prune(model, pruning_perc):

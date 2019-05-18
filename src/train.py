@@ -39,6 +39,7 @@ class YOLOv1Train():
             optimizer = torch.optim.SGD(params, lr=LEARNING_RATE, momentum=0.9, weight_decay=5e-4)
         
         print ('')
+        epoch_start = 0
         if (CHKP_LOAD):
             path_model = os.path.join(CHKP_DIR, CHKP_NAME)
             if os.path.exists(path_model):
@@ -50,8 +51,6 @@ class YOLOv1Train():
                 print ('  -- [TRAIN] [Loss] Val   : ', checkpoint['loss_val'])
                 model.load_state_dict(checkpoint['model_state_dict'])
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        else:
-            epoch_start = 0
         
         model.train()
         for epoch in range(epoch_start,EPOCHS):
