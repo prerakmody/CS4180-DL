@@ -50,6 +50,9 @@ There are two ways of doing this.
 	5. Clone the code and start playing around
 
 
+# GPU processes 
+	1. check with command *nvidia-smi*
+	2. kill a process with command *sudo kill -9 <pid> // sudo kill -9 <pid>*
 
 # Other useful links (GCP VM)
 [help1] (https://medium.com/@kn.maragatham09/installing-jupyter-notebook-on-google-cloud-11979e40cd10).
