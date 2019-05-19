@@ -49,6 +49,8 @@ There are two ways of doing this.
 		<fixed-external ip of the VM>: <port number-8888 by default> --> 34.34.34.34:8888
 	5. Clone the code and start playing around
 
+# Using Tensotboard
+	1. run the jupyter notebook file in the setting directory in order to open port 6006 on the vm for tensorboardcolab
 
 # GPU processes 
 	1. check with command *nvidia-smi*
