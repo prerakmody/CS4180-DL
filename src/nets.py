@@ -10,16 +10,17 @@ import torch.nn.functional as F
 
 from pruning.weightPruning.layers import MaskedLinear
 
-cfg = {
-    'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
-    'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
-}
+def getYOLOv1Self(name=''):
 
-def getYOLOv1(name=''):
+    cfg = {
+        'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+        'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+        'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+        'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+    }
+
     if name != '':
-        myYOLO            = YOLOv1(name, cfg['D'], batch_norm=True)
+        myYOLO            = YOLOv1Self(name, cfg['D'], batch_norm=True)
         VGG               = models.vgg16_bn(pretrained=True)
         state_dict_VGG    = VGG.state_dict()
         state_dict_myYOLO = myYOLO.state_dict()
@@ -33,13 +34,11 @@ def getYOLOv1(name=''):
     else:
         print (' - Pass a name for your model')
         sys.exit(1)
-    
 
-
-class YOLOv1(nn.Module):
+class YOLOv1Self(nn.Module):
 
     def __init__(self, name, cfg, batch_norm, image_size=448):
-        super(YOLOv1, self).__init__()
+        super(YOLOv1Self, self).__init__()
         self.name       = name
         self.features   = self.getFeatureLayers(cfg, batch_norm)
         self.linear1    = MaskedLinear(512 * 7 * 7, 4096)
@@ -111,11 +110,15 @@ class YOLOv1(nn.Module):
         self.linear2.set_mask(masks[1])
 
 def test():
-    net = getYOLOv1()
-    img = torch.rand(1,3,448,448)
-    img = Variable(img)
-    output = net(img)
-    print(output.size())
+    if (0):
+        net = getYOLOv1Self()
+        img = torch.rand(1,3,448,448)
+        img = Variable(img)
+        output = net(img)
+        print(output.size())
+    else:
+
+        pass
 
 # if __name__ == '__main__':
 #     test()
