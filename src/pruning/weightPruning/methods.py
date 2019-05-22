@@ -74,8 +74,8 @@ def quick_filter_prune(model, pruning_perc):
             masks[ind][value_this_layer < threshold] = 0.
             ind += 1
       
-  masks = [torch.from_numpy(mask) for mask in masks]
-  return masks
+    masks = [torch.from_numpy(mask) for mask in masks]
+    return masks
 
 
 def prune_one_filter(model, masks):
