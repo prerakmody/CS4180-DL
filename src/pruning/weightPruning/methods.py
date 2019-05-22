@@ -26,11 +26,11 @@ def weight_prune(model, pruning_perc):
     return masks
 
 def quick_filter_prune(model, pruning_perc):
-     '''
+    '''
     Prune pruning_perc% filters globally
     '''
     masks = []
-  
+
     values = []
     for p in model.parameters():
 
@@ -39,18 +39,18 @@ def quick_filter_prune(model, pruning_perc):
 
             masks.append(np.ones(p_np.shape).astype('float32'))                           
 
-              # find the scaled l2 norm for each filter this layer
-              value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
-                  .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
-              # normalization (important)
-              value_this_layer = value_this_layer / \
-                  np.sqrt(np.square(value_this_layer).sum())
-              min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
-              max_value = np.max(value_this_layer)
+            # find the scaled l2 norm for each filter this layer
+            value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
+                .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+            # normalization (important)
+            value_this_layer = value_this_layer / \
+                np.sqrt(np.square(value_this_layer).sum())
+            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+            max_value = np.max(value_this_layer)
 
-              value_this_layer /= max_value
+            value_this_layer /= max_value
 
-              values = np.concatenate((values, value_this_layer))
+            values = np.concatenate((values, value_this_layer))
 
     threshold = np.percentile(values, pruning_perc)
 
