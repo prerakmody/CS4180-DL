@@ -18,6 +18,12 @@ from google.colab.patches import cv2_imshow
 
 USE_GPU = torch.cuda.is_available()
 
+class YOLOv2Test():
+
+    def __init__(self):
+        pass
+        
+
 class YOLOv1Test():
     
     def __init__(self, model, model_chkp='', IMAGE_SIZE=448, IMAGE_GRID=7):

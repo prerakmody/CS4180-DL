@@ -5,6 +5,9 @@ import torch
 from torch.autograd import Variable
 from tensorboardcolab import TensorBoardColab
 
+
+## --------------------------------------- YOLOV1 --------------------------------------- ##
+
 class YOLOv1Train():
 	
     def __init__(self):
@@ -154,9 +157,6 @@ class YOLOv1Train():
         if LOGGER != '' : LOGGER.close()
         self.model = model
         self.optimizer = optimizer
-
-		
-
 
 import torch
 import torch.nn as nn
