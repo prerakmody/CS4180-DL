@@ -1,255 +1,39 @@
-#encoding:utf-8
-import sys
+import time
 import math
 import traceback
 import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.utils.model_zoo as model_zoo
-from torchvision import models
 import torch.nn.functional as F
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.autograd import Variable
 
-from src.nets2_utils import *
-
-# from pruning.weightPruning.layers import MaskedLinear
+from nets2_parsecfg import *
+from nets2_utils import *
 
 torch.cuda.empty_cache()
 USE_GPU = torch.cuda.is_available()
 print (' - USE_GPU : ', USE_GPU)
 
-## --------------------------------------- YOLOV2 --------------------------------------- ##
+"""
+URLs
+    - YOLOv1 
+        - https://pjreddie.com/darknet/yolov1/
+            - wget http://pjreddie.com/media/files/yolov1/yolov1.weights (~800MB) [trained on 2007 train/val+ 2012 train/val]
+    - YOLOv2
+        - https://pjreddie.com/darknet/yolov2/
+            - https://github.com/pjreddie/darknet/blob/master/cfg/yolov2-voc.cfg [416 x 416]
+            - wget https://pjreddie.com/media/files/yolov2-voc.weights (~MB) [trained on 2007 train/val+ 2012 train/val]
+        - On other gthubs
+            - wget http://pjreddie.com/media/files/yolo.weights
+            - wget https://pjreddie.com/media/files/yolo-voc.weights
+"""
 
-## ----------------- YOLOV2:cfg
-def parse_cfg(cfgfile):
-    blocks = []
-    fp = open(cfgfile, 'r')
-    block =  None
-    line = fp.readline()
-    while line != '':
-        line = line.rstrip()
-        if line == '' or line[0] == '#':
-            line = fp.readline()
-            continue        
-        elif line[0] == '[':
-            if block:
-                blocks.append(block)
-            block = dict()
-            block['type'] = line.lstrip('[').rstrip(']')
-            # set default value
-            if block['type'] == 'convolutional':
-                block['batch_normalize'] = 0
-        else:
-            key,value = line.split('=')
-            key = key.strip()
-            if key == 'type':
-                key = '_type'
-            value = value.strip()
-            block[key] = value
-        line = fp.readline()
+# from region_loss import RegionLoss
+#from layers.batchnorm.bn import BN2d
 
-    if block:
-        blocks.append(block)
-    fp.close()
-    return blocks
-
-def print_cfg(blocks):
-    print('layer     filters    size              input                output');
-    prev_width = 416
-    prev_height = 416
-    prev_filters = 3
-    out_filters =[]
-    out_widths =[]
-    out_heights =[]
-    ind = -2
-    for block in blocks:
-        ind = ind + 1
-        if block['type'] == 'net':
-            prev_width = int(block['width'])
-            prev_height = int(block['height'])
-            continue
-        elif block['type'] == 'convolutional':
-            filters = int(block['filters'])
-            kernel_size = int(block['size'])
-            stride = int(block['stride'])
-            is_pad = int(block['pad'])
-            pad = (kernel_size-1)/2 if is_pad else 0
-            width = (prev_width + 2*pad - kernel_size)/stride + 1
-            height = (prev_height + 2*pad - kernel_size)/stride + 1
-            print('%5d %-6s %4d  %d x %d / %d   %3d x %3d x%4d   ->   %3d x %3d x%4d' % (ind, 'conv', filters, kernel_size, kernel_size, stride, prev_width, prev_height, prev_filters, width, height, filters))
-            prev_width = width
-            prev_height = height
-            prev_filters = filters
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'maxpool':
-            pool_size = int(block['size'])
-            stride = int(block['stride'])
-            width = prev_width/stride
-            height = prev_height/stride
-            print('%5d %-6s       %d x %d / %d   %3d x %3d x%4d   ->   %3d x %3d x%4d' % (ind, 'max', pool_size, pool_size, stride, prev_width, prev_height, prev_filters, width, height, filters))
-            prev_width = width
-            prev_height = height
-            prev_filters = filters
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'avgpool':
-            width = 1
-            height = 1
-            print('%5d %-6s                   %3d x %3d x%4d   ->  %3d' % (ind, 'avg', prev_width, prev_height, prev_filters,  prev_filters))
-            prev_width = width
-            prev_height = height
-            prev_filters = filters
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'softmax':
-            print('%5d %-6s                                    ->  %3d' % (ind, 'softmax', prev_filters))
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'cost':
-            print('%5d %-6s                                     ->  %3d' % (ind, 'cost', prev_filters))
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'reorg':
-            stride = int(block['stride'])
-            filters = stride * stride * prev_filters
-            width = prev_width/stride
-            height = prev_height/stride
-            print('%5d %-6s             / %d   %3d x %3d x%4d   ->   %3d x %3d x%4d' % (ind, 'reorg', stride, prev_width, prev_height, prev_filters, width, height, filters))
-            prev_width = width
-            prev_height = height
-            prev_filters = filters
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'route':
-            layers = block['layers'].split(',')
-            layers = [int(i) if int(i) > 0 else int(i)+ind for i in layers]
-            if len(layers) == 1:
-                print('%5d %-6s %d' % (ind, 'route', layers[0]))
-                prev_width = out_widths[layers[0]]
-                prev_height = out_heights[layers[0]]
-                prev_filters = out_filters[layers[0]]
-            elif len(layers) == 2:
-                print('%5d %-6s %d %d' % (ind, 'route', layers[0], layers[1]))
-                prev_width = out_widths[layers[0]]
-                prev_height = out_heights[layers[0]]
-                assert(prev_width == out_widths[layers[1]])
-                assert(prev_height == out_heights[layers[1]])
-                prev_filters = out_filters[layers[0]] + out_filters[layers[1]]
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'region':
-            print('%5d %-6s' % (ind, 'detection'))
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'shortcut':
-            from_id = int(block['from'])
-            from_id = from_id if from_id > 0 else from_id+ind
-            print('%5d %-6s %d' % (ind, 'shortcut', from_id))
-            prev_width = out_widths[from_id]
-            prev_height = out_heights[from_id]
-            prev_filters = out_filters[from_id]
-            out_widths.append(prev_width)
-            out_heights.append(prev_height)
-            out_filters.append(prev_filters)
-        elif block['type'] == 'connected':
-            filters = int(block['output'])
-            print('%5d %-6s                            %d  ->  %3d' % (ind, 'connected', prev_filters,  filters))
-            prev_filters = filters
-            out_widths.append(1)
-            out_heights.append(1)
-            out_filters.append(prev_filters)
-        else:
-            print('unknown type %s' % (block['type']))
-
-def load_conv_old(buf, start, conv_model):
-    num_w = conv_model.weight.numel()
-    num_b = conv_model.bias.numel()
-    conv_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    conv_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w])); start = start + num_w
-    return start
-
-def save_conv(fp, conv_model):
-    if conv_model.bias.is_cuda:
-        convert2cpu(conv_model.bias.data).numpy().tofile(fp)
-        convert2cpu(conv_model.weight.data).numpy().tofile(fp)
-    else:
-        conv_model.bias.data.numpy().tofile(fp)
-        conv_model.weight.data.numpy().tofile(fp)
-
-def load_conv_bn_old(buf, start, conv_model, bn_model, verbose=0):
-    num_w = conv_model.weight.numel()
-    num_b = bn_model.bias.numel()
-    if (1):
-        print ('      - conv weights : ', num_w)
-        print ('      - bias weights : ', num_b)
-        print ('      - bn_model.bias : ', bn_model.bias.shape)
-        print ('      - bn_model.weight : ', bn_model.weight.shape)
-    
-    bn_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));     start = start + num_b
-    bn_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    bn_model.running_mean.copy_(torch.from_numpy(buf[start:start+num_b]));  start = start + num_b
-    bn_model.running_var.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    
-    if (1):
-        print ('      - start : ', start)
-        print ('      - size :  ', buf[start:start+num_w].shape)
-        print ('      - shape :  ', conv_model.weight.data.shape)
-    conv_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w])); start = start + num_w 
-    
-    return start
-
-def save_conv_bn(fp, conv_model, bn_model):
-    if bn_model.bias.is_cuda:
-        convert2cpu(bn_model.bias.data).numpy().tofile(fp)
-        convert2cpu(bn_model.weight.data).numpy().tofile(fp)
-        convert2cpu(bn_model.running_mean).numpy().tofile(fp)
-        convert2cpu(bn_model.running_var).numpy().tofile(fp)
-        convert2cpu(conv_model.weight.data).numpy().tofile(fp)
-    else:
-        bn_model.bias.data.numpy().tofile(fp)
-        bn_model.weight.data.numpy().tofile(fp)
-        bn_model.running_mean.numpy().tofile(fp)
-        bn_model.running_var.numpy().tofile(fp)
-        conv_model.weight.data.numpy().tofile(fp)
-
-def load_fc(buf, start, fc_model):
-    num_w = fc_model.weight.numel()
-    num_b = fc_model.bias.numel()
-    fc_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));     start = start + num_b
-    fc_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w]));   start = start + num_w 
-    return start
-
-def save_fc(fp, fc_model):
-    fc_model.bias.data.numpy().tofile(fp)
-    fc_model.weight.data.numpy().tofile(fp)
-
-def load_param(file, param):
-    param.data.copy_(torch.from_numpy(
-        np.fromfile(file, dtype=np.float32, count=param.numel()).reshape(param.shape)
-    ))
-
-def load_conv(file, conv_model):
-    load_param(file, conv_model.bias)
-    load_param(file, conv_model.weight)
-
-def load_conv_bn(file, conv_model, bn_model):
-    load_param(file, bn_model.bias)
-    load_param(file, bn_model.weight)
-    load_param(file, bn_model.running_mean)
-    load_param(file, bn_model.running_var)
-    load_param(file, conv_model.weight)
-
-
-## ----------------- YOLOV2:modelling
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
     nB = target.size(0)
     nA = num_anchors
@@ -426,6 +210,8 @@ class RegionLoss(nn.Module):
             print('             total : %f' % (t4 - t0))
         print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], loss_cls.data[0], loss.data[0]))
         return loss
+
+### ------------------------------- <MODEL> ---------------------------- ###
 
 class MaxPoolStride1(nn.Module):
     def __init__(self):
@@ -816,172 +602,58 @@ class Darknet(nn.Module):
                 print('unknown type %s' % (block['type']))
         fp.close()
 
-def getYOLOv2(cfgfile, weightfile):
-    model = Darknet(cfgfile)
-    model.load_weights(weightfile)
-    if USE_GPU:
-        model.cuda()
-    return model
 
-def testYOLOv2():
+def foo(x):
+    import torch
+    y = torch.rand(3, 4)
+    y.copy_(x)
+    return y
 
-    cfgfile    = 'data/cfg/github_pjreddie/yolov2-voc.cfg'
-    weightfile = 'data/weights/github_pjreddie/yolov2-voc.weights'
-    model      = getYOLOv2(cfgfile, weightfile) 
-    print (' - 1. Model is loaded!')
+if __name__ == "__main__":
+    if (1):
+        if (0):
+            cfgfile    = 'cfg/yolo.cfg'
+            weightfile = '../demo/demo1/weights/yolo.weights'
+        else:
+            print (' - Loading YOLO')
+            cfgfile    = 'cfg/yolo_voc.cfg'
+            weightfile = '../../tmp/pytorch-yolo2/yolo-voc.weights'
+            
+        imgdir     = '../../tmp/pytorch-yolo2/data' # [ ]
+        namesfile  = '../../tmp/pytorch-yolo2/data/voc.names'
 
-    imgdir      = 'data/dataset/yolo_samples'
-    namesfile   = 'data/dataset/voc.names'
-    class_names = load_class_names(namesfile)
-    for each in ['dog.jpg', 'eagle.jpg',  'giraffe.jpg',  'horses.jpg',  'person.jpg',  'scream.jpg']:
-        try:
-            print ('')
-            imgfile = os.path.join(imgdir, each)        
-            img     = Image.open(imgfile).convert('RGB')
-            sized   = img.resize((model.width, model.height))
+        model = Darknet(cfgfile)
+        print (' - Model is made. Loading weights ')
+        model.load_weights(weightfile)
 
-            start  = time.time()
-            boxes  = do_detect(model, sized, 0.5, 0.4, USE_GPU)
-            finish = time.time()
-            print('%s: Predicted in %f seconds.' % (imgfile, (finish-start)))
-            plot_boxes(img, boxes, os.path.join(imgdir, '_' + each), class_names)
-        except:
-            traceback.print_exc()
-            pass
-
-
-
-## --------------------------------------- YOLOV1 --------------------------------------- ##
-
-
-def getYOLOv1Self(name=''):
-
-    cfg = {
-        'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-        'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-        'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
-        'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
-    }
-
-    if name != '':
-        myYOLO            = YOLOv1Self(name, cfg['D'], batch_norm=True)
-        VGG               = models.vgg16_bn(pretrained=True)
-        state_dict_VGG    = VGG.state_dict()
-        state_dict_myYOLO = myYOLO.state_dict()
+        use_cuda = USE_GPU
+        if use_cuda:
+            model.cuda()
         
-        for k in state_dict_VGG.keys():
-            if k in state_dict_myYOLO.keys() and k.startswith('features'):
-                state_dict_myYOLO[k] = state_dict_VGG[k]
-        myYOLO.load_state_dict(state_dict_myYOLO)
-        return myYOLO
+        class_names = load_class_names(namesfile)
+        for each in ['dog.jpg', 'eagle.jpg',  'giraffe.jpg',  'horses.jpg',  'person.jpg',  'scream.jpg']:
+            try:
+                print ('')
+                imgfile = os.path.join(imgdir, each)        
+                img     = Image.open(imgfile).convert('RGB')
+                sized   = img.resize((model.width, model.height))
+
+                start  = time.time()
+                boxes  = do_detect(model, sized, 0.5, 0.4, use_cuda)
+                finish = time.time()
+                print('%s: Predicted in %f seconds.' % (imgfile, (finish-start)))
+                plot_boxes(img, boxes, os.path.join('tmp', each), class_names)
+            except:
+                pass
+
 
     else:
-        print (' - Pass a name for your model')
-        sys.exit(1)
-
-class YOLOv1Self(nn.Module):
-
-    def __init__(self, name, cfg, batch_norm, image_size=448):
-        super(YOLOv1Self, self).__init__()
-        self.name       = name
-        self.features   = self.getFeatureLayers(cfg, batch_norm)
-        self.linear1    = MaskedLinear(512 * 7 * 7, 4096)
-        self.linear2    = MaskedLinear(4096, 1470)
-        self.classifier = nn.Sequential( # add the regression part to the features
-            # nn.Linear(512 * 7 * 7, 4096),
-            self.linear1,
-            nn.ReLU(True),
-            nn.Dropout(),
-            # nn.Linear(4096, 1470),
-            self.linear2,
-        )
-        self._initialize_weights()
-        self.image_size = image_size
-
-    def forward(self, x):
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        x = self.classifier(x)
-        x = torch.sigmoid(x)
-        x = x.view(-1,7,7,30)
-        return x
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                if m.bias is not None:
-                    m.bias.data.zero_()
-            elif isinstance(m, nn.BatchNorm2d):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-            elif isinstance(m, nn.Linear):
-                m.weight.data.normal_(0, 0.01)
-                m.bias.data.zero_()
-
-
-    def getFeatureLayers(self, cfg, batch_norm=False):
-        if (1):
-            params_in_channels  = 3
-            params_conv_stride  = 1
-            params_conv_size    = 3 
-            params_first_flag   = True
-            params_pool_stride  = 2
-            params_pool_kernel  = 2
-
-        layers = []
-        for item in cfg:
-            params_conv_stride = 1
-            if (item == 64 and params_first_flag):
-                params_conv_stride = 2
-                params_first_flag  = False
-
-            if item == 'M': # max-pooling
-                layers += [nn.MaxPool2d(kernel_size=params_pool_kernel, stride=params_pool_stride)]
-            else:
-                params_kernels = item
-                conv2d = nn.Conv2d(params_in_channels, params_kernels, kernel_size=params_conv_size, stride=params_conv_stride, padding=1)
-                if batch_norm:
-                    layers += [conv2d, nn.BatchNorm2d(item), nn.ReLU(inplace=True)]
-                else:
-                    layers += [conv2d, nn.ReLU(inplace=True)]
-                params_in_channels = item
-        return nn.Sequential(*layers)
-
-    def set_masks(self, masks):
-        self.linear1.set_mask(masks[0])
-        self.linear2.set_mask(masks[1])
-
-def testYOLOv1():
-    if (0):
-        net = getYOLOv1Self()
-        img = torch.rand(1,3,448,448)
-        img = Variable(img)
-        output = net(img)
-        print(output.size())
-    else:
-        pass
-
-if __name__ == '__main__':
-    # testYOLOv1()
-    testYOLOv2()
-    
+        tmp = foo(torch.from_numpy(np.random.rand(3,4)))
+        print (tmp)
+        tmp = foo(torch.from_numpy(np.random.rand(12)))
+        print (tmp)
 
 
 
-"""
-URLs
-    - YOLOv1 
-        - https://pjreddie.com/darknet/yolov1/
-            - wget http://pjreddie.com/media/files/yolov1/yolov1.weights (~800MB) [trained on 2007 train/val+ 2012 train/val]
-    - YOLOv2
-        - https://pjreddie.com/darknet/yolov2/
-            - https://github.com/pjreddie/darknet/blob/master/cfg/yolov2-voc.cfg [416 x 416]
-            - wget https://pjreddie.com/media/files/yolov2-voc.weights (~MB) [trained on 2007 train/val+ 2012 train/val]
-        - On other gthubs
-            - wget http://pjreddie.com/media/files/yolo.weights
-            - wget https://pjreddie.com/media/files/yolo-voc.weights
-    - Dataset
-        - 
-"""
+
+    # print (model)
