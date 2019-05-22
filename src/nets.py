@@ -1,4 +1,5 @@
 #encoding:utf-8
+import os
 import sys
 import math
 import traceback
@@ -10,13 +11,14 @@ import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
 
+# print (os.getcwd())
 from src.nets2_utils import *
+# from .nets2_utils import *
 
 # from pruning.weightPruning.layers import MaskedLinear
 
 torch.cuda.empty_cache()
 USE_GPU = torch.cuda.is_available()
-print (' - USE_GPU : ', USE_GPU)
 
 ## --------------------------------------- YOLOV2 --------------------------------------- ##
 
