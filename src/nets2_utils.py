@@ -434,3 +434,9 @@ def get_image_size(fname):
 
 def logging(message):
     print('%s %s' % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), message))
+
+
+if __name__ == "__main__":
+    file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/dataset/voc.names'
+    class_names = load_class_names(file)
+    print (class_names)
