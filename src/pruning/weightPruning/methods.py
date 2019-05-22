@@ -26,51 +26,53 @@ def weight_prune(model, pruning_perc):
     return masks
 
 def quick_filter_prune(model, pruning_perc):
-  masks = []
+     '''
+    Prune pruning_perc% filters globally
+    '''
+    masks = []
   
-  values = []
-  for p in model.parameters():
+    values = []
+    for p in model.parameters():
 
-      if len(p.data.size()) == 4: # nasty way of selecting conv layer
-          p_np = p.data.cpu().numpy()
+        if len(p.data.size()) == 4: # nasty way of selecting conv layer
+            p_np = p.data.cpu().numpy()
 
-          masks.append(np.ones(p_np.shape).astype('float32'))                           
+            masks.append(np.ones(p_np.shape).astype('float32'))                           
 
-          # find the scaled l2 norm for each filter this layer
-          value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
-              .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
-          # normalization (important)
-          value_this_layer = value_this_layer / \
-              np.sqrt(np.square(value_this_layer).sum())
-          min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
-          max_value = np.max(value_this_layer)
+              # find the scaled l2 norm for each filter this layer
+              value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
+                  .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+              # normalization (important)
+              value_this_layer = value_this_layer / \
+                  np.sqrt(np.square(value_this_layer).sum())
+              min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+              max_value = np.max(value_this_layer)
 
-          value_this_layer /= max_value
+              value_this_layer /= max_value
 
-          values = np.concatenate((values, value_this_layer))
+              values = np.concatenate((values, value_this_layer))
 
+    threshold = np.percentile(values, pruning_perc)
 
-  threshold = np.percentile(values, pruning_perc)
+    ind = 0
+    for p in model.parameters():
 
-  ind = 0
-  for p in model.parameters():
+        if len(p.data.size()) == 4: # nasty way of selecting conv layer
+            p_np = p.data.cpu().numpy()
 
-    if len(p.data.size()) == 4: # nasty way of selecting conv layer
-          p_np = p.data.cpu().numpy()
+            # find the scaled l2 norm for each filter this layer
+            value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
+                .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+            # normalization (important)
+            value_this_layer = value_this_layer / \
+                np.sqrt(np.square(value_this_layer).sum())
+            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+            max_value = np.max(value_this_layer)
 
-          # find the scaled l2 norm for each filter this layer
-          value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
-              .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
-          # normalization (important)
-          value_this_layer = value_this_layer / \
-              np.sqrt(np.square(value_this_layer).sum())
-          min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
-          max_value = np.max(value_this_layer)
+            value_this_layer /= max_value
 
-          value_this_layer /= max_value
-
-          masks[ind][value_this_layer < threshold] = 0.
-          ind += 1
+            masks[ind][value_this_layer < threshold] = 0.
+            ind += 1
       
   masks = [torch.from_numpy(mask) for mask in masks]
   return masks
