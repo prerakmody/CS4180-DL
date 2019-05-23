@@ -12,7 +12,7 @@ from torchvision import models
 import torch.nn.functional as F
 
 # print (os.getcwd())
-from src.nets2_utils import *
+# from src.nets2_utils import *
 # from .nets2_utils import *
 
 # from pruning.weightPruning.layers import MaskedLinear
@@ -23,18 +23,22 @@ USE_GPU = torch.cuda.is_available()
 ## --------------------------------------- YOLOV2 --------------------------------------- ##
 
 ## ----------------- YOLOV2:cfg
-def parse_cfg(cfgfile):
+def parse_cfg(cfgfile, verbose=0):
     blocks = []
-    fp = open(cfgfile, 'r')
-    block =  None
-    line = fp.readline()
+    fp     = open(cfgfile, 'r')
+    block  =  None
+    line   = fp.readline()
     while line != '':
         line = line.rstrip()
         if line == '' or line[0] == '#':
             line = fp.readline()
-            continue        
+            continue
+
         elif line[0] == '[':
             if block:
+                if verbose:
+                    print ('')
+                    print (' - block : ', block)
                 blocks.append(block)
             block = dict()
             block['type'] = line.lstrip('[').rstrip(']')
@@ -514,6 +518,7 @@ class Darknet(nn.Module):
             elif block['type'] == 'convolutional' or block['type'] == 'maxpool' or block['type'] == 'reorg' or block['type'] == 'avgpool' or block['type'] == 'softmax' or block['type'] == 'connected':
                 x = self.models[ind](x)
                 outputs[ind] = x
+
             elif block['type'] == 'route':
                 layers = block['layers'].split(',')
                 layers = [int(i) if int(i) > 0 else int(i)+ind for i in layers]
@@ -525,6 +530,7 @@ class Darknet(nn.Module):
                     x2 = outputs[layers[1]]
                     x = torch.cat((x1,x2),1)
                     outputs[ind] = x
+
             elif block['type'] == 'shortcut':
                 from_layer = int(block['from'])
                 activation = block['activation']
@@ -537,6 +543,7 @@ class Darknet(nn.Module):
                 elif activation == 'relu':
                     x = F.relu(x, inplace=True)
                 outputs[ind] = x
+
             elif block['type'] == 'region':
                 continue
                 if self.loss:
@@ -544,10 +551,12 @@ class Darknet(nn.Module):
                 else:
                     self.loss = self.models[ind](x)
                 outputs[ind] = None
+
             elif block['type'] == 'cost':
                 continue
             else:
                 print('unknown type %s' % (block['type']))
+
         return x
 
     def print_network(self):
@@ -967,7 +976,10 @@ def testYOLOv1():
 
 if __name__ == '__main__':
     # testYOLOv1()
-    testYOLOv2()
+    # testYOLOv2()
+    # blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg',1)
+    blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg',1)
+    model  = create_network(self.blocks) # merge conv, bn,leaky
     
 
 
@@ -977,7 +989,14 @@ URLs
     - YOLOv1 
         - https://pjreddie.com/darknet/yolov1/
             - wget http://pjreddie.com/media/files/yolov1/yolov1.weights (~800MB) [trained on 2007 train/val+ 2012 train/val]
-    - YOLOv2
+            - https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov1.cfg (output = 1715 = 7x7x(3x5 + 20) ) 
+                - Locally Connected FC (https://discuss.pytorch.org/t/how-does-pytorch-implement-local-convolutional-layer-local-connected-layer/4316)
+                    - https://github.com/pjreddie/darknet/issues/876
+                    - https://github.com/pytorch/pytorch/issues/499
+                    - https://github.com/pytorch/pytorch/compare/master...1zb:conv-local
+                    - Theory : https://www.cs.toronto.edu/~jlucas/teaching/csc411/lectures/lec11_handout.pdf
+                - Locally Connected FC (https://www.tensorflow.org/api_docs/python/tf/keras/layers/LocallyConnected2D)
+    - YOLOv2    
         - https://pjreddie.com/darknet/yolov2/
             - https://github.com/pjreddie/darknet/blob/master/cfg/yolov2-voc.cfg [416 x 416]
             - wget https://pjreddie.com/media/files/yolov2-voc.weights (~MB) [trained on 2007 train/val+ 2012 train/val]
@@ -986,4 +1005,57 @@ URLs
             - wget https://pjreddie.com/media/files/yolo-voc.weights
     - Dataset
         - <> 
+
+Results
+    - YOLOv1 (inside YOLO paper)
+        - (2007 + 2012) = 63.4 mAP
+        - (2007 + 2012) = 66.4 mAP (VGG-16)
+    - repo1 (https://github.com/yxlijun/tensorflow-yolov1)
+        - (2007 + 2012) = 65.3 mAP (VGG-16)
+        - (2007 + 2012) = 66.12 mAP (VGG-19)
+        - (2007 + 2012) = 65.23 mAP (Resnet)
+
+Pre-trained Weights
+    - YOLOv1
+        - repo1 : https://github.com/dshahrokhian/YOLO_tensorflow
+            - YOLO_small.ckpt
+        - repo1 : https://docs.openvinotoolkit.org/latest/_docs_MO_DG_prepare_model_convert_model_tf_specific_Convert_YOLO_From_Tensorflow.html
+            - convert from pjreddie --> tensorflow --> convert to pytorch
+
+Converter
+    - https://github.com/microsoft/MMdnn
+    - https://github.com/marvis/pytorch-caffe-darknet-convert
+    - https://github.com/AceCoooool/YOLO-pytorch/blob/master/tools/yad2t.py
+    - https://github.com/thtrieu/darkflow.git
+        - git clone https://github.com/thtrieu/darkflow.git
+        - cd darkflow
+        - pip install -e .
+        - wget http://pjreddie.com/media/files/yolov1/yolov1.weights
+        - flow --model cfg/v1.1/yolov1.cfg --load ../../repo1/data/weights/github_pjreddie/yolov1.weights --savepb
+        - Colab
+            - # ! git clone https://github.com/thtrieu/darkflow.git
+                # ! cd darkflow && pip install -e .
+                # ! wget http://pjreddie.com/media/files/yolov1/yolov1.weights
+                # ! flow -h
+                # ! ls -l
+                # ! flow --model darkflow/cfg/v1.1/yolov1.cfg --load yolov1.weights --savepb
+
+Random
+    - https://github.com/happyjin/pytorch-YOLO/blob/master/network.py
+    - https://github.com/kevin970401/pytorch-YOLO-v1/blob/master/models/yolo.py
+"""
+
+"""
+We train the network for about 
+ - 135 epochs on the train-ing and validation data sets from PASCAL VOC 2007 and 2012. 
+ - When testing on 2012 we also include the VOC 2007 test data for training. 
+ - Throughout training we use a 
+    - batch size of 64, a momentum of 0.9 and a decay of 0.0005. 
+ - Our learning rate schedule is as follows: 
+    - For the first epochs we slowly raise the learning rate from 10−3 to 10−2. 
+    - If we start at a high learning rate our model often diverges due to unstable gradients. 
+    - We continue training with 
+        - 10−2 for 75 epochs
+        - then 10−3 for 30 epochs
+        - and finally 10−4 for 30 epochs
 """
