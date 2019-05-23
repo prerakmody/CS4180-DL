@@ -1,3 +1,4 @@
+import cv2
 import os
 import sys
 import math
@@ -627,14 +628,14 @@ class YOLOv2(nn.Module):
 
 if __name__ == "__main__":
     if 1:
-        cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg'
+        cfg_file = 'yolov2-voc.cfg'
     else:
         cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg'
         weights_file = 'data/weights/github_pjreddie/yolov1.weights'
 
 
     TORCH_DEVICE = "cpu" # ["cpu", "cuda"]
-    model = YOLOv1(cfg_file, 1).to(TORCH_DEVICE)
+    model = YOLOv2(cfg_file, 1).to(TORCH_DEVICE)
     # model.load_weights(weights_file)
     # op    = model(torch.rand((1,3,448,448)).to(TORCH_DEVICE))
     # print (' - op : ', op.shape)
