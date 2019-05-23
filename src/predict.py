@@ -3,7 +3,10 @@ import cv2
 import tqdm
 import traceback
 import numpy as np
+import pandas as pd
+import _pickle as cPickle
 from collections import defaultdict
+import xml.etree.ElementTree as ET
 import matplotlib.pyplot as plt
 
 import torch
@@ -12,11 +15,353 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 
 from src.nets import *
-from src.dataloader import YoloDataset 
+from src.dataloader import * 
 
-from google.colab.patches import cv2_imshow
+# from google.colab.patches import cv2_imshow
 
 USE_GPU = torch.cuda.is_available()
+
+
+class PASCALVOCEval():
+
+    def __init__(self, MODEL_CFGFILE, MODEL_WEIGHTFILE, PASCAL_DIR, EVAL_IMAGELIST, EVAL_OUTPUTDIR, EVAL_PREFIX, EVAL_OUTPUTDIR_PKL):
+        self.MODEL_CFGFILE    = MODEL_CFGFILE
+        self.MODEL_WEIGHTFILE = MODEL_WEIGHTFILE
+        self.PASCAL_DIR       = PASCAL_DIR
+        self.EVAL_IMAGELIST   = EVAL_IMAGELIST
+        self.EVAL_OUTPUTDIR   = EVAL_OUTPUTDIR
+        self.EVAL_PREFIX      = EVAL_PREFIX
+        self.EVAL_OUTPUTDIR_PKL = EVAL_OUTPUTDIR_PKL
+
+        self.VOC_CLASSES = (    # always index 0
+                'aeroplane', 'bicycle', 'bird', 'boat',
+                'bottle', 'bus', 'car', 'cat', 'chair',
+                'cow', 'diningtable', 'dog', 'horse',
+                'motorbike', 'person', 'pottedplant',
+            'sheep', 'sofa', 'train', 'tvmonitor')
+        
+        self.VOC_CLASSES_ = ('__background__', # always index 0
+            'aeroplane', 'bicycle', 'bird', 'boat',
+            'bottle', 'bus', 'car', 'cat', 'chair',
+            'cow', 'diningtable', 'dog', 'horse',
+            'motorbike', 'person', 'pottedplant',
+            'sheep', 'sofa', 'train', 'tvmonitor') 
+        self.VOC_YEAR = '2007'
+        
+    def predict(self,CONF_THRESH=0.005,NMS_THRESH=0.45):
+
+        if (1):
+            print (' - 1. Loading model')
+            model = getYOLOv2(self.MODEL_CFGFILE, self.MODEL_WEIGHTFILE)
+            model.eval()
+
+        if (1):
+            print (' - 2. Loading dataset')
+            with open(self.EVAL_IMAGELIST) as fp:
+                tmp_files   = fp.readlines()
+                valid_files = [item.rstrip() for item in tmp_files]
+            eval_dataset = VOCDatasetv2(self.EVAL_IMAGELIST, shape=(model.width, model.height),
+                            shuffle=False,
+                            transform=transforms.Compose([
+                                transforms.ToTensor(),
+                            ]))
+            eval_batchsize = 2
+            kwargs = {'num_workers': 4, 'pin_memory': True}
+            eval_loader = torch.utils.data.DataLoader(
+                eval_dataset, batch_size=eval_batchsize, shuffle=False, **kwargs) 
+
+        if (1):
+            fps = [0]*model.num_classes
+            if not os.path.exists(self.EVAL_OUTPUTDIR):
+                os.mkdir(self.EVAL_OUTPUTDIR)
+            for i in range(model.num_classes):
+                buf = '%s/%s%s.txt' % (self.EVAL_OUTPUTDIR, self.EVAL_PREFIX, self.VOC_CLASSES[i])
+                fps[i] = open(buf, 'w')
+    
+        lineId = -1
+        print (' - Validating : Images : ', len(eval_loader))
+        with torch.no_grad():
+            with tqdm.tqdm_notebook(total = len(eval_loader)) as pbar:
+                for batch_idx, (data, target) in enumerate(eval_loader):
+                    pbar.update(1)
+                    data        = data.cuda()
+                    data        = Variable(data)
+                    output      = model(data).data
+                    batch_boxes = get_region_boxes(output, CONF_THRESH, model.num_classes, model.anchors, model.num_anchors, 0, 1)
+                    for i in range(output.size(0)):
+                        lineId        = lineId + 1
+                        fileId        = os.path.basename(valid_files[lineId]).split('.')[0]
+                        width, height = get_image_size(valid_files[lineId])
+                        # print(valid_files[lineId])
+                        boxes = batch_boxes[i]
+                        boxes = nms(boxes, NMS_THRESH)
+                        for box in boxes:
+                            x1 = (box[0] - box[2]/2.0) * width
+                            y1 = (box[1] - box[3]/2.0) * height
+                            x2 = (box[0] + box[2]/2.0) * width
+                            y2 = (box[1] + box[3]/2.0) * height
+
+                            det_conf = box[4]
+                            for j in range(int((len(box)-5)/2)):
+                                cls_conf = box[5+2*j]
+                                cls_id   = box[6+2*j]
+                                prob     = det_conf * cls_conf
+                                fps[cls_id].write('%s %f %f %f %f %f\n' % (fileId, prob, x1, y1, x2, y2))
+
+        for i in range(model.num_classes):
+            fps[i].close()
+        
+        self._do_python_eval()
+    
+    def parse_rec(self, filename):
+        """ Parse a PASCAL VOC xml file """
+        tree = ET.parse(filename)
+        objects = []
+        for obj in tree.findall('object'):
+            obj_struct = {}
+            obj_struct['name'] = obj.find('name').text
+            obj_struct['pose'] = obj.find('pose').text
+            obj_struct['truncated'] = int(obj.find('truncated').text)
+            obj_struct['difficult'] = int(obj.find('difficult').text)
+            bbox = obj.find('bndbox')
+            obj_struct['bbox'] = [int(bbox.find('xmin').text),
+                                int(bbox.find('ymin').text),
+                                int(bbox.find('xmax').text),
+                                int(bbox.find('ymax').text)]
+            objects.append(obj_struct)
+
+        return objects
+
+    def voc_ap(self, rec, prec, use_07_metric=False):
+        """ ap = voc_ap(rec, prec, [use_07_metric])
+        Compute VOC AP given precision and recall.
+        If use_07_metric is true, uses the
+        VOC 07 11 point method (default:False).
+        """
+        if use_07_metric:
+            # 11 point metric
+            ap = 0.
+            for t in np.arange(0., 1.1, 0.1):
+                if np.sum(rec >= t) == 0:
+                    p = 0
+                else:
+                    p = np.max(prec[rec >= t])
+                ap = ap + p / 11.
+        else:
+            # correct AP calculation
+            # first append sentinel values at the end
+            mrec = np.concatenate(([0.], rec, [1.]))
+            mpre = np.concatenate(([0.], prec, [0.]))
+
+            # compute the precision envelope
+            for i in range(mpre.size - 1, 0, -1):
+                mpre[i - 1] = np.maximum(mpre[i - 1], mpre[i])
+
+            # to calculate area under PR curve, look for points
+            # where X axis (recall) changes value
+            i = np.where(mrec[1:] != mrec[:-1])[0]
+
+            # and sum (\Delta recall) * prec
+            ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
+        return ap
+
+    def voc_eval(self, detpath,
+                annopath,
+                imagesetfile,
+                classname,
+                cachedir,
+                ovthresh=0.5,
+                use_07_metric=False):
+        """rec, prec, ap = voc_eval(detpath,
+                                    annopath,
+                                    imagesetfile,
+                                    classname,
+                                    [ovthresh],
+                                    [use_07_metric])
+
+        Top level function that does the PASCAL VOC evaluation.
+
+        detpath: Path to detections
+            detpath.format(classname) should produce the detection results file.
+        annopath: Path to annotations
+            annopath.format(imagename) should be the xml annotations file.
+        imagesetfile: Text file containing the list of images, one image per line.
+        classname: Category name (duh)
+        cachedir: Directory for caching the annotations
+        [ovthresh]: Overlap threshold (default = 0.5)
+        [use_07_metric]: Whether to use VOC07's 11 point AP computation
+            (default False)
+        """
+        # assumes detections are in detpath.format(classname)
+        # assumes annotations are in annopath.format(imagename)
+        # assumes imagesetfile is a text file with each line an image name
+        # cachedir caches the annotations in a pickle file
+
+        # first load gt
+        if not os.path.isdir(cachedir):
+            os.mkdir(cachedir)
+        cachefile = os.path.join(cachedir, 'annots.pkl')
+        # print (' - cachefile : ', cachefile)
+        # read list of images
+        with open(imagesetfile, 'r') as f:
+            lines = f.readlines()
+        imagenames = [x.strip() for x in lines]
+
+        if not os.path.isfile(cachefile):
+            # load annots
+            recs = {}
+            for i, imagename in enumerate(imagenames):
+                recs[imagename] = self.parse_rec(annopath.format(imagename))
+                if i % 100 == 0:
+                    # print ('Reading annotation for {0}/{1}'.format(i + 1, len(imagenames))
+                    print ('Reading annotation for ', i+1, '/', len(imagenames))
+            # save
+            # print ('Saving cached annotations to {0}'.format(cachefile))
+
+            with open(cachefile, 'wb') as f:
+                cPickle.dump(recs, f)
+
+        else:
+            # load
+            with open(cachefile, 'rb') as f:
+                recs = cPickle.load(f)
+
+        # extract gt objects for this class
+        class_recs = {}
+        npos = 0
+        for imagename in imagenames:
+            R = [obj for obj in recs[imagename] if obj['name'] == classname]
+            bbox = np.array([x['bbox'] for x in R])
+            difficult = np.array([x['difficult'] for x in R]).astype(np.bool)
+            det = [False] * len(R)
+            npos = npos + sum(~difficult)
+            class_recs[imagename] = {'bbox': bbox,
+                                    'difficult': difficult,
+                                    'det': det}
+
+        # read dets
+        detfile = detpath.format(classname)
+        with open(detfile, 'r') as f:
+            lines = f.readlines()
+
+        splitlines = [x.strip().split(' ') for x in lines]
+        image_ids = [x[0] for x in splitlines]
+        confidence = np.array([float(x[1]) for x in splitlines])
+        BB = np.array([[float(z) for z in x[2:]] for x in splitlines])
+
+        # sort by confidence
+        sorted_ind = np.argsort(-confidence)
+        sorted_scores = np.sort(-confidence)
+        BB = BB[sorted_ind, :]
+        image_ids = [image_ids[x] for x in sorted_ind]
+
+        # go down dets and mark TPs and FPs
+        nd = len(image_ids)
+        tp = np.zeros(nd)
+        fp = np.zeros(nd)
+        for d in range(nd):
+            R = class_recs[image_ids[d]]
+            bb = BB[d, :].astype(float)
+            ovmax = -np.inf
+            BBGT = R['bbox'].astype(float)
+
+            if BBGT.size > 0:
+                # compute overlaps
+                # intersection
+                ixmin = np.maximum(BBGT[:, 0], bb[0])
+                iymin = np.maximum(BBGT[:, 1], bb[1])
+                ixmax = np.minimum(BBGT[:, 2], bb[2])
+                iymax = np.minimum(BBGT[:, 3], bb[3])
+                iw = np.maximum(ixmax - ixmin + 1., 0.)
+                ih = np.maximum(iymax - iymin + 1., 0.)
+                inters = iw * ih
+
+                # union
+                uni = ((bb[2] - bb[0] + 1.) * (bb[3] - bb[1] + 1.) +
+                    (BBGT[:, 2] - BBGT[:, 0] + 1.) *
+                    (BBGT[:, 3] - BBGT[:, 1] + 1.) - inters)
+
+                overlaps = inters / uni
+                ovmax = np.max(overlaps)
+                jmax = np.argmax(overlaps)
+
+            if ovmax > ovthresh:
+                if not R['difficult'][jmax]:
+                    if not R['det'][jmax]:
+                        tp[d] = 1.
+                        R['det'][jmax] = 1
+                    else:
+                        fp[d] = 1.
+            else:
+                fp[d] = 1.
+
+        # compute precision recall
+        fp = np.cumsum(fp)
+        tp = np.cumsum(tp)
+        rec = tp / float(npos)
+        # avoid divide by zero in case the first detection matches a difficult
+        # ground truth
+        prec = tp / np.maximum(tp + fp, np.finfo(np.float64).eps)
+        ap = self.voc_ap(rec, prec, use_07_metric)
+
+        return rec, prec, ap
+
+    def _do_python_eval(self):
+        print (' - Reading predictions from : ', self.EVAL_OUTPUTDIR, '(',self.EVAL_PREFIX,')')
+        res_prefix   = os.path.join(self.EVAL_OUTPUTDIR, self.EVAL_PREFIX)
+        filename     = res_prefix + '{:s}.txt'
+        annopath     = os.path.join(self.PASCAL_DIR, 'VOC' + self.VOC_YEAR, 'Annotations','{:s}.xml')
+        imagesetfile = os.path.join(self.PASCAL_DIR, 'VOC' + self.VOC_YEAR,'ImageSets','Main','test.txt')
+        cachedir     = os.path.join(self.PASCAL_DIR, 'annotations_cache')
+        aps          = []
+
+        # The PASCAL VOC metric changed in 2010
+        use_07_metric = True if int(self.VOC_YEAR) < 2010 else False
+        print (' - VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
+        #if not os.path.isdir(self.EVAL_OUTPUTDIR_PKL):
+        #    os.mkdir(self.EVAL_OUTPUTDIR_PKL)
+
+        finalMAP = []
+        with tqdm.tqdm_notebook(total = len(self.VOC_CLASSES_)) as pbar:
+            for i, cls in enumerate(self.VOC_CLASSES_):
+                pbar.update(1)
+                if cls == '__background__':
+                    continue
+                
+                rec, prec, ap = self.voc_eval(
+                    filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
+                    use_07_metric=use_07_metric)
+                aps += [ap]
+                finalMAP.append([cls, ap])
+                # print('AP for {} = {:.4f}'.format(cls, ap))
+
+                #with open(os.path.join(self.EVAL_OUTPUTDIR_PKL, cls + '_pr.pkl'), 'wb') as f:
+                #    cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
+
+        df_MAP = pd.DataFrame(finalMAP, columns=['class', 'mAP'])        
+        print('~~~~~~~~')
+        print (df_MAP)
+        print('~~~~~~~~')
+        print('Mean AP = {:.4f}'.format(np.mean(aps)))
+        # print('~~~~~~~~')
+        # print('Results:')
+        # for ap in aps:
+        #     print('{:.3f}'.format(ap))
+        # print('{:.3f}'.format(np.mean(aps)))
+        # print('~~~~~~~~')
+        # print('')
+        # print('--------------------------------------------------------------')
+        # print('Results computed with the **unofficial** Python eval code.')
+        # print('Results should be very close to the official MATLAB eval code.')
+        # print('Recompute with `./tools/reval.py --matlab ...` for your paper.')
+        # print('-- Thanks, The Management')
+        # print('--------------------------------------------------------------')
+
+class YOLOv2Test():
+
+    def __init__(self):
+        pass
+        
 
 class YOLOv1Test():
     
@@ -382,34 +727,49 @@ class YOLOv1Test():
 if __name__ == "__main__":
 
     if (1):
-        dir_main = './yolo'
-        dir_annotations  = os.path.join(dir_main, 'data/VOCdevkit_test/VOC2007')
-        file_annotations = os.path.join(dir_main, 'data/VOCdevkit_test/VOC2007/anno_test.txt')
-        flagTrain        = False
-        flagAug          = False
-        BATCH_SIZE       = 2
-        IMAGE_SIZE       = 448
-        IMAGE_GRID       = 7
+        if (1):
+            dir_main = './yolo'
+            dir_annotations  = os.path.join(dir_main, 'data/VOCdevkit_test/VOC2007')
+            file_annotations = os.path.join(dir_main, 'data/VOCdevkit_test/VOC2007/anno_test.txt')
+            flagTrain        = False
+            flagAug          = False
+            BATCH_SIZE       = 2
+            IMAGE_SIZE       = 448
+            IMAGE_GRID       = 7
 
-        YoloDatasetTest  = YoloDataset(dir_annotations, file_annotations
-                                    , flagTrain
-                                    , IMAGE_SIZE, IMAGE_GRID
-                                    , flagAug
-                                    , transform = [transforms.ToTensor()] )
-        DataLoaderTest   = DataLoader(YoloDatasetTest, batch_size=BATCH_SIZE, shuffle=False,num_workers=0)
-        print (' - 1. Dataset Loaded')
+            YoloDatasetTest  = YoloDataset(dir_annotations, file_annotations
+                                        , flagTrain
+                                        , IMAGE_SIZE, IMAGE_GRID
+                                        , flagAug
+                                        , transform = [transforms.ToTensor()] )
+            DataLoaderTest   = DataLoader(YoloDatasetTest, batch_size=BATCH_SIZE, shuffle=False,num_workers=0)
+            print (' - 1. Dataset Loaded')
+        
+        if (1):
+            model_name = 'yolov1'
+            model = getYOLOv1(model_name)
+            testObj = YOLOv1Test(model, model_chkp='')
+            print (' - 2. Model Loaded')
+
+        if (0):
+            with torch.no_grad():
+                for i,(X,Y) in enumerate(DataLoaderTest):
+                    print (' - 3. Image : ', i, ' || X:', X.shape)
+                    yHat = testObj.test(X, Y, plot=True)
+                    break
+        else:
+            testObj.getmAP(file_annotations, YoloDatasetTest)
     
-    if (1):
-        model_name = 'yolov1'
-        model = getYOLOv1(model_name)
-        testObj = YOLOv1Test(model, model_chkp='')
-        print (' - 2. Model Loaded')
-
-    if (0):
-        with torch.no_grad():
-            for i,(X,Y) in enumerate(DataLoaderTest):
-                print (' - 3. Image : ', i, ' || X:', X.shape)
-                yHat = testObj.test(X, Y, plot=True)
-                break
     else:
-        testObj.getmAP(file_annotations, YoloDatasetTest)
+        DIR_PROJ         = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1'
+        MODEL_CFGFILE    = os.path.join(DIR_PROJ, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
+        MODEL_WEIGHTFILE = os.path.join(DIR_PROJ, 'data/weights/github_pjreddie/yolov2-voc.weights')
+        PASCAL_DIR       = os.path.join(DIR_PROJ, 'data/dataset/VOCdevkit/')
+        EVAL_IMAGELIST   = os.path.join(DIR_PROJ, 'data/dataset/2007_test.txt')
+        EVAL_OUTPUTDIR   = os.path.join(DIR_PROJ, 'demo/demo3_yolov2/eval_data')
+        EVAL_PREFIX      = 'comp4_det_test_'#'pretrained_yolov2_'
+        EVAL_OUTPUTDIR_PKL = os.path.join(DIR_PROJ, 'demo/demo3_yolov2/eval_results')
+
+        valObj = PASCALVOCEval(MODEL_CFGFILE, MODEL_WEIGHTFILE, PASCAL_DIR, EVAL_IMAGELIST, EVAL_OUTPUTDIR, EVAL_PREFIX, EVAL_OUTPUTDIR_PKL)
+        valObj.predict()
+        valObj._do_python_eval()
