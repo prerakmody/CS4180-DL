@@ -258,7 +258,6 @@ def load_conv_bn(file, conv_model, bn_model):
     load_param(file, bn_model.running_var)
     load_param(file, conv_model.weight)
 
-
 ## ----------------- YOLOV2:modelling
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
     nB = target.size(0)
@@ -512,7 +511,7 @@ class Darknet(nn.Module):
         ind = -2
         self.loss = None
         outputs = dict()
-        for block in self.blocks:
+        for block in self.blocks:   
             ind = ind + 1
             #if ind > 0:
             #    return x
@@ -524,6 +523,7 @@ class Darknet(nn.Module):
                 outputs[ind] = x
 
             elif block['type'] == 'route':
+                # print (' - Block : Route')
                 layers = block['layers'].split(',')
                 layers = [int(i) if int(i) > 0 else int(i)+ind for i in layers]
                 if len(layers) == 1:
@@ -874,8 +874,6 @@ def testYOLOv2():
             traceback.print_exc()
             pass
 
-
-
 ## --------------------------------------- YOLOV1 --------------------------------------- ##
 
 
@@ -1026,7 +1024,7 @@ URLs
         - https://pjreddie.com/darknet/yolov2/
             - https://github.com/pjreddie/darknet/blob/master/cfg/yolov2-voc.cfg [416 x 416]
             - wget https://pjreddie.com/media/files/yolov2-voc.weights (~MB) [trained on 2007 train/val+ 2012 train/val]
-        - On other gthubs
+        - On other githubs
             - wget http://pjreddie.com/media/files/yolo.weights
             - wget https://pjreddie.com/media/files/yolo-voc.weights
     - Dataset
@@ -1085,3 +1083,5 @@ We train the network for about
         - then 10−3 for 30 epochs
         - and finally 10−4 for 30 epochs
 """
+
+
