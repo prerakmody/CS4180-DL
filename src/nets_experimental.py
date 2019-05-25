@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-from torchvision import models
 import torch.nn.functional as F
 
 from torchsummary import summary
@@ -575,7 +574,11 @@ class Reorg(nn.Module):
     def __init__(self, stride=2):
         super(Reorg, self).__init__()
         self.stride = stride
+
     def forward(self, x):
+        print ('')
+        print (' - [BLOCK] : Reorg ')
+        print ('  --- [ip] : ', x.shape)
         stride = self.stride
         assert(x.data.dim() == 4)
         B = x.data.size(0)
@@ -590,6 +593,7 @@ class Reorg(nn.Module):
         x = x.view((B, C, int(H/hs*W/ws), hs*ws)).transpose(2,3).contiguous()
         x = x.view((B, C, hs*ws, int(H/hs), int(W/ws))).transpose(1,2).contiguous()
         x = x.view((B, hs*ws*C, int(H/hs), int(W/ws)))
+        print ('  --- [op] : ', x.shape)
         return x
 
 class GlobalAvgPool2d(nn.Module):
@@ -622,22 +626,80 @@ class YOLOv2(nn.Module):
         self.blocks_nnmodules  = model_create(self.blocks_json, name='YOLOv2')
 
     def forward(self, x):
-        pass
+        ind = -2
+        self.loss = None
+        outputs   = dict()
+        for block in self.blocks_json:   
+            ind = ind + 1
+            
+            if block['type'] == 'net':
+                continue
+            elif block['type'] == 'convolutional' or block['type'] == 'maxpool' or block['type'] == 'reorg' or block['type'] == 'avgpool' or block['type'] == 'softmax' or block['type'] == 'connected':
+                x            = self.blocks_nnmodules[ind](x)
+                outputs[ind] = x
+
+            elif block['type'] == 'route':
+                print ('')
+                print (' - [BLOCK] : Route (',ind,')')
+                print ('  - [BLOCK] : Layers : ', block['layers'])
+                print ('  --- [ip] : ', x.shape)
+                layers = block['layers'].split(',')
+                layers = [int(i) if int(i) > 0 else int(i)+ind for i in layers]
+                if len(layers) == 1:
+                    x = outputs[layers[0]]
+                    print ('  --- [op] : ', x.shape)
+                    outputs[ind] = x
+                elif len(layers) == 2:
+                    x1 = outputs[layers[0]]
+                    x2 = outputs[layers[1]]
+                    x = torch.cat((x1,x2),1)
+                    outputs[ind] = x
+                    print ('   - [DEBUG] x=', x.shape)
+
+            elif block['type'] == 'shortcut':
+                from_layer = int(block['from'])
+                activation = block['activation']
+                from_layer = from_layer if from_layer > 0 else from_layer + ind
+                x1 = outputs[from_layer]
+                x2 = outputs[ind-1]
+                x  = x1 + x2
+                if activation == 'leaky':
+                    x = F.leaky_relu(x, 0.1, inplace=True)
+                elif activation == 'relu':
+                    x = F.relu(x, inplace=True)
+                outputs[ind] = x
+
+            elif block['type'] == 'region':
+                continue
+                if self.loss:
+                    self.loss = self.loss + self.models[ind](x)
+                else:
+                    self.loss = self.models[ind](x)
+                outputs[ind] = None
+
+            elif block['type'] == 'cost':
+                continue
+            else:
+                print('unknown type %s' % (block['type']))
+
+        return x
 
 
 if __name__ == "__main__":
     if 1:
         cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg'
+        ip       = torch.rand((1,3,416,416))
     else:
-        cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg'
+        cfg_file     = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg'
         weights_file = 'data/weights/github_pjreddie/yolov1.weights'
-
+        ip           = torch.rand((1,3,448,448))
 
     TORCH_DEVICE = "cpu" # ["cpu", "cuda"]
-    model = YOLOv1(cfg_file, 1).to(TORCH_DEVICE)
+    model        = YOLOv2(cfg_file, 1).to(TORCH_DEVICE)
+    op           = model(ip.to(TORCH_DEVICE))
+    print (' - op : ', op.shape)
+
     # model.load_weights(weights_file)
-    # op    = model(torch.rand((1,3,448,448)).to(TORCH_DEVICE))
-    # print (' - op : ', op.shape)
     # summary(model, input_size=(3, 448, 448))
 
 
