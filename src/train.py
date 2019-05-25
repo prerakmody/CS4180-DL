@@ -29,14 +29,16 @@ class YOLOv2Train():
         data_options  = read_data_cfg(datacfg)
         net_options   = parse_cfg(cfgfile)[0]
 
+        # data configuration
         trainlist     = data_options['train']
         testlist      = data_options['valid']
         backupdir     = data_options['backup']
         nsamples      = file_lines(trainlist)
-        gpus          = [1]
-        ngpus         = len(gpus.split(','))
+        gpus          = "1"
+        ngpus         = 1
         num_workers   = 4
 
+        # model/net configuration
         batch_size    = int(net_options['batch'])
         max_batches   = int(net_options['max_batches'])
         learning_rate = float(net_options['learning_rate'])
@@ -46,7 +48,7 @@ class YOLOv2Train():
         scales        = [float(scale) for scale in net_options['scales'].split(',')]
 
         #Train parameters
-        max_epochs    = max_batches*batch_size/nsamples+1
+        max_epochs    = int(max_batches*batch_size/nsamples+1)
         use_cuda      = True
         seed          = int(time.time())
         eps           = 1e-5
@@ -101,14 +103,14 @@ class YOLOv2Train():
             if key.find('.bn') >= 0 or key.find('.bias') >= 0:
                 params += [{'params': [value], 'weight_decay': 0.0}]
             else:
-                params += [{'params': [value], 'weight_decay': decay*BATCH_batch_sizeSIZE}]
+                params += [{'params': [value], 'weight_decay': decay*batch_size}]
         optimizer = optim.SGD(model.parameters(), 
                                 lr=learning_rate/batch_size, momentum=momentum,
                                 dampening=0, weight_decay=decay*batch_size)
         
         for epoch in range(init_epoch, max_epochs): 
             ## ----------------------- TRAIN ------------------------
-            global processed_batches
+            # global processed_batches
             t0 = time.time()
             if ngpus > 1:
                 cur_model = model.module
@@ -126,14 +128,14 @@ class YOLOv2Train():
                             batch_size=batch_size),
                 batch_size=batch_size, shuffle=False, **kwargs)               
 
-            lr = adjust_learning_rate(optimizer, processed_batches)
+            lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, batch_size)
             logging('epoch %d, processed %d samples, lr %f' % (epoch, epoch * len(train_loader.dataset), lr))
             model.train()
             t1 = time.time()
             avg_time = torch.zeros(9)
             for batch_idx, (data, target) in enumerate(train_loader):
                 t2 = time.time()
-                adjust_learning_rate(optimizer, processed_batches)
+                self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, batch_size)
                 processed_batches = processed_batches + 1
                 #if (batch_idx+1) % dot_interval == 0:
                 #    sys.stdout.write('.')
@@ -185,10 +187,10 @@ class YOLOv2Train():
                 cur_model.save_weights('%s/%06d.weights' % (backupdir, epoch+1))
 
             ## ----------------------- TEST ------------------------
-            test(epoch)
+            self.test(epoch)
         # end for epoch
 
-    def adjust_learning_rate(optimizer, batch):
+    def adjust_learning_rate(self, optimizer, batch, learning_rate, steps, scales, batch_size):
         """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
         lr = learning_rate
         for i in range(len(steps)):
@@ -203,7 +205,7 @@ class YOLOv2Train():
             param_group['lr'] = lr/batch_size
         return lr
 
-    def test(epoch):
+    def test(self, epoch):
         def truths_length(truths):
             for i in range(50):
                 if truths[i][1] == 0:
@@ -257,6 +259,13 @@ class YOLOv2Train():
         logging("precision: %f, recall: %f, fscore: %f" % (precision, recall, fscore))
 
 
+# to run this locally, need proper paths
+# datacfg = "/Users/mango/Documents/Github/CS4180-DL/data/cfg/github_pjreddie/voc.data"
+# cfgfile = "/Users/mango/Documents/Github/CS4180-DL/data/cfg/github_pjreddie/yolov2-voc.cfg"
+# weightfile = "/Users/mango/Documents/Github/CS4180-DL/data/weights/github_pjreddie/yolov2-voc.weights"
+
+# trainObj = YOLOv2Train()
+# trainObj.train(datacfg, cfgfile, weightfile)
 
 
 ## --------------------------------------- YOLOV1 --------------------------------------- ##
