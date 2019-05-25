@@ -13,6 +13,10 @@ import torch.nn.functional as F
 
 from torchsummary import summary
 
+from pruning.weightPruning.layers import MaskedConv2d
+from pruning.weightPruning.methods import weight_prune
+from pruning.weightPruning.utils import prune_rate
+
 def model_parse_cfg(cfgfile, verbose=0):
     if verbose:
         print ('- cfgfile : ', cfgfile)
@@ -213,10 +217,10 @@ def model_create(blocks, name):
                 model           = nn.Sequential()
                 
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                 else:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
                 elif activation == 'relu':
@@ -268,10 +272,10 @@ def model_create(blocks, name):
                 model           = nn.Sequential()
 
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                 else:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
                 elif activation == 'relu':
@@ -625,156 +629,40 @@ class YOLOv2(nn.Module):
     def forward(self, x):
         pass
 
+    def set_masks(self, masks):
+        count = 0
+        for m in self.blocks_nnmodules:
+            try:
+                if m[0].name == 'MaskedConv2d':
+                    m[0].set_mask(masks[count])
+                    count += 1
+            except:
+                print(m)
+
 
 if __name__ == "__main__":
     if 1:
         cfg_file = 'yolov2-voc.cfg'
+        weights_file = 'yolov2-voc.weights'
     else:
         cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg'
         weights_file = 'data/weights/github_pjreddie/yolov1.weights'
 
 
     TORCH_DEVICE = "cpu" # ["cpu", "cuda"]
-    model = YOLOv2(cfg_file, 1).to(TORCH_DEVICE)
+    model = YOLOv2(cfg_file, weights_file).to(TORCH_DEVICE)
+
+
+    params = [p for p in model.parameters()]
+
+    pruning_perc = 90.
+    masks = weight_prune(model, pruning_perc)
+
+    #set_trace()
+    model.set_masks(masks)
+
+    prune_rate(model)
     # model.load_weights(weights_file)
     # op    = model(torch.rand((1,3,448,448)).to(TORCH_DEVICE))
     # print (' - op : ', op.shape)
     # summary(model, input_size=(3, 448, 448))
-
-
-"""
- - Locally connected Layer : https://github.com/pjreddie/darknet/issues/876
-"""
-
-"""
-----------------------------------------------------------------
-        Layer (type)               Output Shape         Param #
-================================================================
-            Conv2d-1         [-1, 64, 224, 224]           9,408
-       BatchNorm2d-2         [-1, 64, 224, 224]             128
-         LeakyReLU-3         [-1, 64, 224, 224]               0
-         MaxPool2d-4         [-1, 64, 112, 112]               0
-            Conv2d-5        [-1, 192, 112, 112]         110,592
-       BatchNorm2d-6        [-1, 192, 112, 112]             384
-         LeakyReLU-7        [-1, 192, 112, 112]               0
-         MaxPool2d-8          [-1, 192, 56, 56]               0
-            Conv2d-9          [-1, 128, 56, 56]          24,576
-      BatchNorm2d-10          [-1, 128, 56, 56]             256
-        LeakyReLU-11          [-1, 128, 56, 56]               0
-           Conv2d-12          [-1, 256, 56, 56]         294,912
-      BatchNorm2d-13          [-1, 256, 56, 56]             512
-        LeakyReLU-14          [-1, 256, 56, 56]               0
-           Conv2d-15          [-1, 256, 56, 56]          65,536
-      BatchNorm2d-16          [-1, 256, 56, 56]             512
-        LeakyReLU-17          [-1, 256, 56, 56]               0
-           Conv2d-18          [-1, 512, 56, 56]       1,179,648
-      BatchNorm2d-19          [-1, 512, 56, 56]           1,024
-        LeakyReLU-20          [-1, 512, 56, 56]               0
-        MaxPool2d-21          [-1, 512, 28, 28]               0
-           Conv2d-22          [-1, 256, 28, 28]         131,072
-      BatchNorm2d-23          [-1, 256, 28, 28]             512
-        LeakyReLU-24          [-1, 256, 28, 28]               0
-           Conv2d-25          [-1, 512, 28, 28]       1,179,648
-      BatchNorm2d-26          [-1, 512, 28, 28]           1,024
-        LeakyReLU-27          [-1, 512, 28, 28]               0
-           Conv2d-28          [-1, 256, 28, 28]         131,072
-      BatchNorm2d-29          [-1, 256, 28, 28]             512
-        LeakyReLU-30          [-1, 256, 28, 28]               0
-           Conv2d-31          [-1, 512, 28, 28]       1,179,648
-      BatchNorm2d-32          [-1, 512, 28, 28]           1,024
-        LeakyReLU-33          [-1, 512, 28, 28]               0
-           Conv2d-34          [-1, 256, 28, 28]         131,072
-      BatchNorm2d-35          [-1, 256, 28, 28]             512
-        LeakyReLU-36          [-1, 256, 28, 28]               0
-           Conv2d-37          [-1, 512, 28, 28]       1,179,648
-      BatchNorm2d-38          [-1, 512, 28, 28]           1,024
-        LeakyReLU-39          [-1, 512, 28, 28]               0
-           Conv2d-40          [-1, 256, 28, 28]         131,072
-      BatchNorm2d-41          [-1, 256, 28, 28]             512
-        LeakyReLU-42          [-1, 256, 28, 28]               0
-           Conv2d-43          [-1, 512, 28, 28]       1,179,648
-      BatchNorm2d-44          [-1, 512, 28, 28]           1,024
-        LeakyReLU-45          [-1, 512, 28, 28]               0
-           Conv2d-46          [-1, 512, 28, 28]         262,144
-      BatchNorm2d-47          [-1, 512, 28, 28]           1,024
-        LeakyReLU-48          [-1, 512, 28, 28]               0
-           Conv2d-49         [-1, 1024, 28, 28]       4,718,592
-      BatchNorm2d-50         [-1, 1024, 28, 28]           2,048
-        LeakyReLU-51         [-1, 1024, 28, 28]               0
-        MaxPool2d-52         [-1, 1024, 14, 14]               0
-           Conv2d-53          [-1, 512, 14, 14]         524,288
-      BatchNorm2d-54          [-1, 512, 14, 14]           1,024
-        LeakyReLU-55          [-1, 512, 14, 14]               0
-           Conv2d-56         [-1, 1024, 14, 14]       4,718,592
-      BatchNorm2d-57         [-1, 1024, 14, 14]           2,048
-        LeakyReLU-58         [-1, 1024, 14, 14]               0
-           Conv2d-59          [-1, 512, 14, 14]         524,288
-      BatchNorm2d-60          [-1, 512, 14, 14]           1,024
-        LeakyReLU-61          [-1, 512, 14, 14]               0
-           Conv2d-62         [-1, 1024, 14, 14]       4,718,592
-      BatchNorm2d-63         [-1, 1024, 14, 14]           2,048
-        LeakyReLU-64         [-1, 1024, 14, 14]               0
-           Conv2d-65         [-1, 1024, 14, 14]       9,437,184
-      BatchNorm2d-66         [-1, 1024, 14, 14]           2,048
-        LeakyReLU-67         [-1, 1024, 14, 14]               0
-           Conv2d-68           [-1, 1024, 7, 7]       9,437,184
-      BatchNorm2d-69           [-1, 1024, 7, 7]           2,048
-        LeakyReLU-70           [-1, 1024, 7, 7]               0
-           Conv2d-71           [-1, 1024, 7, 7]       9,437,184
-      BatchNorm2d-72           [-1, 1024, 7, 7]           2,048
-        LeakyReLU-73           [-1, 1024, 7, 7]               0
-           Conv2d-74           [-1, 1024, 7, 7]       9,437,184
-      BatchNorm2d-75           [-1, 1024, 7, 7]           2,048
-        LeakyReLU-76           [-1, 1024, 7, 7]               0
-           Conv2d-77            [-1, 256, 7, 7]       2,359,296
-      BatchNorm2d-78            [-1, 256, 7, 7]             512
-        LeakyReLU-79            [-1, 256, 7, 7]               0
-          Dropout-80            [-1, 256, 7, 7]               0
-           Linear-81                 [-1, 1715]      21,512,960
-================================================================
-Total params: 84,041,920
-Trainable params: 84,041,920
-Non-trainable params: 0
-----------------------------------------------------------------
-Input size (MB): 2.30
-Forward/backward pass size (MB): 331.53
-Params size (MB): 320.59
-Estimated Total Size (MB): 654.42
-----------------------------------------------------------------
-"""
-
-"""
-layer     filters    size              input                output
-    0 conv     64  7 x 7 / 2   448 x 448 x   3   ->   224 x 224 x  64
-    1 max          2 x 2 / 2   224 x 224 x  64   ->   112 x 112 x  64
-    2 conv    192  3 x 3 / 1   112 x 112 x  64   ->   112 x 112 x 192
-    3 max          2 x 2 / 2   112 x 112 x 192   ->    56 x  56 x 192
-    4 conv    128  1 x 1 / 1    56 x  56 x 192   ->    56 x  56 x 128
-    5 conv    256  3 x 3 / 1    56 x  56 x 128   ->    56 x  56 x 256
-    6 conv    256  1 x 1 / 1    56 x  56 x 256   ->    56 x  56 x 256
-    7 conv    512  3 x 3 / 1    56 x  56 x 256   ->    56 x  56 x 512
-    8 max          2 x 2 / 2    56 x  56 x 512   ->    28 x  28 x 512
-    9 conv    256  1 x 1 / 1    28 x  28 x 512   ->    28 x  28 x 256
-   10 conv    512  3 x 3 / 1    28 x  28 x 256   ->    28 x  28 x 512
-   11 conv    256  1 x 1 / 1    28 x  28 x 512   ->    28 x  28 x 256
-   12 conv    512  3 x 3 / 1    28 x  28 x 256   ->    28 x  28 x 512
-   13 conv    256  1 x 1 / 1    28 x  28 x 512   ->    28 x  28 x 256
-   14 conv    512  3 x 3 / 1    28 x  28 x 256   ->    28 x  28 x 512
-   15 conv    256  1 x 1 / 1    28 x  28 x 512   ->    28 x  28 x 256
-   16 conv    512  3 x 3 / 1    28 x  28 x 256   ->    28 x  28 x 512
-   17 conv    512  1 x 1 / 1    28 x  28 x 512   ->    28 x  28 x 512
-   18 conv   1024  3 x 3 / 1    28 x  28 x 512   ->    28 x  28 x1024
-   19 max          2 x 2 / 2    28 x  28 x1024   ->    14 x  14 x1024
-   20 conv    512  1 x 1 / 1    14 x  14 x1024   ->    14 x  14 x 512
-   21 conv   1024  3 x 3 / 1    14 x  14 x 512   ->    14 x  14 x1024
-   22 conv    512  1 x 1 / 1    14 x  14 x1024   ->    14 x  14 x 512
-   23 conv   1024  3 x 3 / 1    14 x  14 x 512   ->    14 x  14 x1024
-   24 conv   1024  3 x 3 / 1    14 x  14 x1024   ->    14 x  14 x1024
-   25 conv   1024  3 x 3 / 2    14 x  14 x1024   ->     7 x   7 x1024
-   26 conv   1024  3 x 3 / 1     7 x   7 x1024   ->     7 x   7 x1024
-   27 conv   1024  3 x 3 / 1     7 x   7 x1024   ->     7 x   7 x1024
-   28 local   256  3 x 3 / 1     7 x   7 x1024   ->     7 x   7 x 256
-   29 dropout
-   30 connected                              7 x   7 x 256  ->  1715
-   31 detection
-"""

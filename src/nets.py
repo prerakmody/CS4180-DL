@@ -1,4 +1,5 @@
 #encoding:utf-8
+import cv2
 import os
 import sys
 import math
@@ -15,7 +16,10 @@ import torch.nn.functional as F
 # from src.nets2_utils import *
 # from .nets2_utils import *
 
-# from pruning.weightPruning.layers import MaskedLinear
+from pruning.weightPruning.layers import MaskedConv2d
+from pruning.weightPruning.methods import quick_filter_prune
+from pruning.weightPruning.utils import prune_rate
+
 
 torch.cuda.empty_cache()
 USE_GPU = torch.cuda.is_available()
@@ -583,11 +587,11 @@ class Darknet(nn.Module):
                 activation = block['activation']
                 model = nn.Sequential()
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                     #model.add_module('bn{0}'.format(conv_id), BN2d(filters))
                 else:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
                 elif activation == 'relu':
@@ -827,6 +831,16 @@ class Darknet(nn.Module):
                 print('unknown type %s' % (block['type']))
         fp.close()
 
+    def set_masks(self, masks):
+        count = 0
+        for m in self.modules():
+            try:
+                if m[0].name == 'MaskedConv2d':
+                    m[0].set_mask(masks[count])
+                    count += 1
+            except:
+                print(m)
+
 def getYOLOv2(cfgfile, weightfile):
     model = Darknet(cfgfile)
     model.load_weights(weightfile)
@@ -976,7 +990,19 @@ def testYOLOv1():
 
 if __name__ == '__main__':
     # testYOLOv1()
-    # testYOLOv2()
+    cfg_file = 'yolov2-voc.cfg'
+    weights_file = 'yolov2-voc.weights'
+    #weights_file = 'yolov2-voc-pruned.weights'
+    #testYOLOv2(cfg_file, weights_file)
+    model = getYOLOv2(cfg_file, weights_file)
+    if (1):
+        for pruning_perc in [10.,30.,50.,70.,90.,99.]:
+            masks = quick_filter_prune(model, pruning_perc)
+            print("Num masks: ", len(masks))
+            model.set_masks(masks)
+            prune_rate(model)
+            model.save_weights('yolov2-voc-filter-prune-%s.weights' % pruning_perc)
+
     # blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg',1)
     blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg',1)
     model  = create_network(self.blocks) # merge conv, bn,leaky
