@@ -51,6 +51,8 @@ There are two ways of doing this.
 
 # Using Tensotboard
 	1. run the jupyter notebook file in the setting directory in order to open port 6006 on the vm for tensorboardcolab
+	2. run the following commands on the VM to open the port and a tensorboardcplab
+	3. ![alt text](https://drive.google.com/file/d/1p4K58topHWHbejfoPfew6yuW8Prl9uUb/view?usp=sharing)
 
 # GPU processes 
 	1. check with command *nvidia-smi*
