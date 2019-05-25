@@ -356,7 +356,7 @@ class RegionLoss(nn.Module):
         self.num_classes = num_classes
         self.anchors = anchors
         self.num_anchors = num_anchors
-        self.anchor_step = len(anchors)/num_anchors
+        self.anchor_step = int(len(anchors)/num_anchors)
         self.coord_scale = 1
         self.noobject_scale = 1
         self.object_scale = 5
@@ -386,8 +386,8 @@ class RegionLoss(nn.Module):
         pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
         grid_x = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
         grid_y = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
-        anchor_w = torch.Tensor(self.anchors).view(nA, self.anchor_step).index_select(1, torch.LongTensor([0])).cuda()
-        anchor_h = torch.Tensor(self.anchors).view(nA, self.anchor_step).index_select(1, torch.LongTensor([1])).cuda()
+        anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0])).cuda()
+        anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1])).cuda()
         anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
         anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
         pred_boxes[0] = x.data + grid_x
@@ -1059,12 +1059,12 @@ def testYOLOv1():
     else:
         pass
 
-if __name__ == '__main__':
-    # testYOLOv1()
-    # testYOLOv2()
-    # blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg',1)
-    blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg',1)
-    model  = create_network(self.blocks) # merge conv, bn,leaky
+# if __name__ == '__main__':
+#     # testYOLOv1()
+#     # testYOLOv2()
+#     # blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg',1)
+#     blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg',1)
+#     model  = create_network(self.blocks) # merge conv, bn,leaky
     
 
 
