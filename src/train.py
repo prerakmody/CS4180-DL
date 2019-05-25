@@ -33,9 +33,9 @@ class YOLOv2Train():
         testlist      = data_options['valid']
         backupdir     = data_options['backup']
         nsamples      = file_lines(trainlist)
-        gpus          = data_options['gpus']  # e.g. 0,1,2,3
+        gpus          = [1]
         ngpus         = len(gpus.split(','))
-        num_workers   = int(data_options['num_workers'])
+        num_workers   = 4
 
         batch_size    = int(net_options['batch'])
         max_batches   = int(net_options['max_batches'])
@@ -82,15 +82,15 @@ class YOLOv2Train():
 
         kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
         test_loader = torch.utils.data.DataLoader(
-            dataset.listDataset(testlist, shape=(init_width, init_height),
+            dataloader.VOCDatasetv2(testlist, shape=(init_width, init_height),
                         shuffle=False,
                         transform=transforms.Compose([
                             transforms.ToTensor(),
                         ]), train=False),
             batch_size=batch_size, shuffle=False, **kwargs)
 
-        if USE_GPU:
-            if N_GPU > 1:
+        if use_cuda:
+            if ngpus > 1:
                 model = torch.nn.DataParallel(model).cuda()
             else:
                 model = model.cuda()
@@ -116,15 +116,14 @@ class YOLOv2Train():
                 cur_model = model
             
             train_loader = torch.utils.data.DataLoader(
-                dataset.listDataset(trainlist, shape=(init_width, init_height),
+                dataloader.VOCDatasetv2(trainlist, shape=(init_width, init_height),
                             shuffle=True,
                             transform=transforms.Compose([
                                 transforms.ToTensor(),
                             ]),
                             train=True,
                             seen=cur_model.seen,
-                            batch_size=batch_size,
-                            num_workers=num_workers),
+                            batch_size=batch_size),
                 batch_size=batch_size, shuffle=False, **kwargs)               
 
             lr = adjust_learning_rate(optimizer, processed_batches)
