@@ -618,3 +618,41 @@ class YOLOv1Loss(nn.Module):
 
 if __name__ == "__main__":
     pass
+
+
+"""
+ - Config0 - pjreddie
+    - EPOCHS=160
+    - LEARNING_RATE=10E3 (/10 at 60 / 90 epochs)
+    - WEIGHT_DECAY=0.0005 (L2 regularization)
+    - MOMENTUM=0.9
+    - DATA_AUG=TRUE (random crops, color shifting)
+    - BATCH_SIZE = 64
+
+ - Config1 - 
+    - EPOCHS=160
+    - LEARNING_RATE=10E4 (/10 at 60 / 90 epochs) <-- reduced this
+    - WEIGHT_DECAY=0.0005 (L2 regularization)
+    - MOMENTUM=0.9
+    - DATA_AUG=TRUE (random crops, color shifting)
+    - BATCH_SIZE = 64
+ 
+ - Config2 - 
+    - EPOCHS=160
+    - LEARNING_RATE=10E5 (/10 at 60 / 90 epochs) <-- reduced this
+    - WEIGHT_DECAY=0.0005 (L2 regularization)
+    - MOMENTUM=0.9
+    - DATA_AUG=TRUE (random crops, color shifting)
+    - BATCH_SIZE = 64
+ 
+ - Config3 - 
+    - EPOCHS=160
+    - LEARNING_RATE=10E3 (/10 at 60 / 90 epochs)
+    - WEIGHT_DECAY=0.0005 (L2 regularization)
+    - MOMENTUM=0.9
+    - DATA_AUG=FALSE (random crops, color shifting) <-- changed this
+    - BATCH_SIZE = 64
+
+ - 
+
+"""
