@@ -2,9 +2,11 @@ import sys
 import os
 import time
 import math
-import torch
+import traceback
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+
+import torch
 from torch.autograd import Variable
 
 import struct # get_image_size
@@ -19,37 +21,49 @@ def softmax(x):
     return x
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
-    if x1y1x2y2:
-        mx = min(box1[0], box2[0])
-        Mx = max(box1[2], box2[2])
-        my = min(box1[1], box2[1])
-        My = max(box1[3], box2[3])
-        w1 = box1[2] - box1[0]
-        h1 = box1[3] - box1[1]
-        w2 = box2[2] - box2[0]
-        h2 = box2[3] - box2[1]
-    else:
-        mx = min(box1[0]-box1[2]/2.0, box2[0]-box2[2]/2.0)
-        Mx = max(box1[0]+box1[2]/2.0, box2[0]+box2[2]/2.0)
-        my = min(box1[1]-box1[3]/2.0, box2[1]-box2[3]/2.0)
-        My = max(box1[1]+box1[3]/2.0, box2[1]+box2[3]/2.0)
-        w1 = box1[2]
-        h1 = box1[3]
-        w2 = box2[2]
-        h2 = box2[3]
-    uw = Mx - mx
-    uh = My - my
-    cw = w1 + w2 - uw
-    ch = h1 + h2 - uh
-    carea = 0
-    if cw <= 0 or ch <= 0:
-        return 0.0
+    try:
+        # print (' ------------- [bbox_iou] box1 : ', box1, ' || box2 : ', box2)
+        if x1y1x2y2:
+            mx = min(box1[0], box2[0])
+            Mx = max(box1[2], box2[2])
+            my = min(box1[1], box2[1])
+            My = max(box1[3], box2[3])
+            w1 = box1[2] - box1[0]
+            h1 = box1[3] - box1[1]
+            w2 = box2[2] - box2[0]
+            h2 = box2[3] - box2[1]
+        else:
+            mx = min(box1[0]-box1[2]/2.0, box2[0]-box2[2]/2.0)
+            Mx = max(box1[0]+box1[2]/2.0, box2[0]+box2[2]/2.0)
+            my = min(box1[1]-box1[3]/2.0, box2[1]-box2[3]/2.0)
+            My = max(box1[1]+box1[3]/2.0, box2[1]+box2[3]/2.0)
+            w1 = box1[2]
+            h1 = box1[3]
+            w2 = box2[2]
+            h2 = box2[3]
+        uw = Mx - mx
+        uh = My - my
+        cw = w1 + w2 - uw
+        ch = h1 + h2 - uh
+        carea = 0
+        if cw <= 0 or ch <= 0:
+            return 0.0
 
-    area1 = w1 * h1
-    area2 = w2 * h2
-    carea = cw * ch
-    uarea = area1 + area2 - carea
-    return carea/uarea
+        area1 = w1 * h1
+        area2 = w2 * h2
+        carea = cw * ch
+        uarea = area1 + area2 - carea
+        return carea/uarea
+    except:
+        traceback.print_exc()
+        print (' - box1 : ', box1)
+        for each in box1:
+            print (type(each))
+        print (' - box1 : ', box2)
+        for each in box2:
+            print (type(each))
+        import pdb; pdb.set_trace()
+        import sys; sys.exit(1)
 
 def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
     if x1y1x2y2:
@@ -80,6 +94,7 @@ def bbox_ious(boxes1, boxes2, x1y1x2y2=True):
     carea = cw * ch
     carea[mask] = 0
     uarea = area1 + area2 - carea
+
     return carea/uarea
 
 def nms(boxes, nms_thresh):

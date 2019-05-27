@@ -11,12 +11,14 @@ import torch.backends.cudnn as cudnn
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
-import dataloader
-from nets2_utils import *
-from nets import parse_cfg
-from nets import Darknet
-from nets import RegionLoss
-from nets import TinyYoloNet
+import src.dataloader as dataloader
+from src.nets2_utils import *
+from src.nets import *
+
+# from nets import parse_cfg
+# from nets import Darknet
+# from nets import RegionLoss
+# from nets import TinyYoloNet
 
 ## --------------------------------------- YOLOV2 --------------------------------------- ##
 class YOLOv2Train():
@@ -25,18 +27,18 @@ class YOLOv2Train():
         self.model       = ''
         self.optimizer   = ''
 
-    def train(self, datacfg, cfgfile, weightfile):
-        data_options  = read_data_cfg(datacfg)
-        net_options   = parse_cfg(cfgfile)[0]
-
-        # data configuration
-        trainlist     = data_options['train']
-        testlist      = data_options['valid']
-        backupdir     = data_options['backup']
+    # def train(self, datacfg, cfgfile, weightfile):
+    def train(self, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, MODEL_CFG, MODEL_WEIGHT):
+        net_options   = parse_cfg(MODEL_CFG)[0]
+        trainlist     = PASCAL_TRAIN
+        testlist      = PASCAL_VALID
+        backupdir     = TRAIN_LOGDIR
         nsamples      = file_lines(trainlist)
         gpus          = "1"
         ngpus         = 1
         num_workers   = 4
+        cfgfile       = MODEL_CFG
+        weightfile    = MODEL_WEIGHT
 
         # model/net configuration
         batch_size    = int(net_options['batch'])
@@ -61,6 +63,7 @@ class YOLOv2Train():
         iou_thresh    = 0.5
 
         if not os.path.exists(backupdir):
+            print (' - backupdir :', backupdir)
             os.mkdir(backupdir)
 
         ###############
@@ -73,14 +76,14 @@ class YOLOv2Train():
         region_loss = model.loss
 
         model.load_weights(weightfile)
-        model.print_network()
+        # model.print_network()
 
         region_loss.seen  = model.seen
-        processed_batches = model.seen/batch_size
+        processed_batches = int(model.seen/batch_size)
 
         init_width        = model.width
         init_height       = model.height
-        init_epoch        = model.seen/nsamples 
+        init_epoch        = int(model.seen/nsamples) 
 
         kwargs = {'num_workers': num_workers, 'pin_memory': True} if use_cuda else {}
         test_loader = torch.utils.data.DataLoader(
@@ -108,7 +111,12 @@ class YOLOv2Train():
                                 lr=learning_rate/batch_size, momentum=momentum,
                                 dampening=0, weight_decay=decay*batch_size)
         
+        print ('')
+        print (' -- init_epoch : ', init_epoch)
+        print (' -- max_epochs : ', max_epochs)
+        
         for epoch in range(init_epoch, max_epochs): 
+            print (' ---------------------------- EPOCH : ', epoch, ' ---------------------------------- ')
             ## ----------------------- TRAIN ------------------------
             # global processed_batches
             t0 = time.time()
@@ -129,55 +137,69 @@ class YOLOv2Train():
                 batch_size=batch_size, shuffle=False, **kwargs)               
 
             lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, batch_size)
-            logging('epoch %d, processed %d samples, lr %f' % (epoch, epoch * len(train_loader.dataset), lr))
+            # logging('epoch %d, processed %d samples, lr %f' % (epoch, epoch * len(train_loader.dataset), lr))
             model.train()
             t1 = time.time()
             avg_time = torch.zeros(9)
-            for batch_idx, (data, target) in enumerate(train_loader):
-                t2 = time.time()
-                self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, batch_size)
-                processed_batches = processed_batches + 1
-                #if (batch_idx+1) % dot_interval == 0:
-                #    sys.stdout.write('.')
 
-                if use_cuda:
-                    data = data.cuda()
-                    #target= target.cuda()
-                t3 = time.time()
-                data, target = Variable(data), Variable(target)
-                t4 = time.time()
-                optimizer.zero_grad()
-                t5 = time.time()
-                output = model(data)
-                t6 = time.time()
-                region_loss.seen = region_loss.seen + data.data.size(0)
-                loss = region_loss(output, target)
-                t7 = time.time()
-                loss.backward()
-                t8 = time.time()
-                optimizer.step()
-                t9 = time.time()
-                if False and batch_idx > 1:
-                    avg_time[0] = avg_time[0] + (t2-t1)
-                    avg_time[1] = avg_time[1] + (t3-t2)
-                    avg_time[2] = avg_time[2] + (t4-t3)
-                    avg_time[3] = avg_time[3] + (t5-t4)
-                    avg_time[4] = avg_time[4] + (t6-t5)
-                    avg_time[5] = avg_time[5] + (t7-t6)
-                    avg_time[6] = avg_time[6] + (t8-t7)
-                    avg_time[7] = avg_time[7] + (t9-t8)
-                    avg_time[8] = avg_time[8] + (t9-t1)
-                    print('-------------------------------')
-                    print('       load data : %f' % (avg_time[0]/(batch_idx)))
-                    print('     cpu to cuda : %f' % (avg_time[1]/(batch_idx)))
-                    print('cuda to variable : %f' % (avg_time[2]/(batch_idx)))
-                    print('       zero_grad : %f' % (avg_time[3]/(batch_idx)))
-                    print(' forward feature : %f' % (avg_time[4]/(batch_idx)))
-                    print('    forward loss : %f' % (avg_time[5]/(batch_idx)))
-                    print('        backward : %f' % (avg_time[6]/(batch_idx)))
-                    print('            step : %f' % (avg_time[7]/(batch_idx)))
-                    print('           total : %f' % (avg_time[8]/(batch_idx)))
-                t1 = time.time()
+            # with tqdm.tqdm_notebook(total = len(train_loader)) as pbar:
+            with tqdm.tqdm(total = len(train_loader)) as pbar:
+                for batch_idx, (data, target) in enumerate(train_loader):
+                    pbar.update(1)
+                    if (batch_idx == 0):
+                        print (' - data (or X) : ', data.shape, data.dtype)
+                        print (' - target (or Y) : ', target.shape, target.dtype)
+                        print (' - Total train points : ', len(train_loader), ' || nsamples : ', nsamples)
+                    if (batch_idx % 100) == 0:
+                        print (' i :', batch_idx, '/', len(train_loader))
+
+                    t2 = time.time()
+                    self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, batch_size)
+                    processed_batches = processed_batches + 1
+                    #if (batch_idx+1) % dot_interval == 0:
+                    #    sys.stdout.write('.')
+
+                    if use_cuda:
+                        data = data.cuda()
+                        #target= target.cuda()
+                    t3 = time.time()
+                    data, target = Variable(data), Variable(target)
+                    t4 = time.time()
+                    optimizer.zero_grad()
+                    t5 = time.time()
+
+                    output = model(data)
+                    t6 = time.time()
+                    
+                    region_loss.seen = region_loss.seen + data.data.size(0)
+                    loss = region_loss(output, target)
+                    t7 = time.time()
+                    loss.backward()
+                    t8 = time.time()
+                    optimizer.step()
+                    t9 = time.time()
+                    if False and batch_idx > 1:
+                        avg_time[0] = avg_time[0] + (t2-t1)
+                        avg_time[1] = avg_time[1] + (t3-t2)
+                        avg_time[2] = avg_time[2] + (t4-t3)
+                        avg_time[3] = avg_time[3] + (t5-t4)
+                        avg_time[4] = avg_time[4] + (t6-t5)
+                        avg_time[5] = avg_time[5] + (t7-t6)
+                        avg_time[6] = avg_time[6] + (t8-t7)
+                        avg_time[7] = avg_time[7] + (t9-t8)
+                        avg_time[8] = avg_time[8] + (t9-t1)
+                        print('-------------------------------')
+                        print('       load data : %f' % (avg_time[0]/(batch_idx)))
+                        print('     cpu to cuda : %f' % (avg_time[1]/(batch_idx)))
+                        print('cuda to variable : %f' % (avg_time[2]/(batch_idx)))
+                        print('       zero_grad : %f' % (avg_time[3]/(batch_idx)))
+                        print(' forward feature : %f' % (avg_time[4]/(batch_idx)))
+                        print('    forward loss : %f' % (avg_time[5]/(batch_idx)))
+                        print('        backward : %f' % (avg_time[6]/(batch_idx)))
+                        print('            step : %f' % (avg_time[7]/(batch_idx)))
+                        print('           total : %f' % (avg_time[8]/(batch_idx)))
+                    t1 = time.time()
+
             print('')
             t1 = time.time()
             logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
@@ -592,3 +614,7 @@ class YOLOv1Loss(nn.Module):
 
         total_loss = (self.l_coord*loc_loss + 2*contain_loss + not_contain_loss + self.l_noobj*nooobj_loss + class_loss)/N
         return total_loss, self.l_coord*loc_loss, class_loss
+
+
+if __name__ == "__main__":
+    pass

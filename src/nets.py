@@ -2,18 +2,20 @@
 import os
 import sys
 import math
+import time
 import traceback
 import numpy as np
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
-from collections import OrderedDict
+from torch.autograd import Variable
 
 # print (os.getcwd())
-# from src.nets2_utils import *
+from src.nets2_utils import *
 # from .nets2_utils import *
 
 # from pruning.weightPruning.layers import MaskedLinear
@@ -258,10 +260,11 @@ def load_conv_bn(file, conv_model, bn_model):
 
 ## ----------------- YOLOV2:modelling
 def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
+    # print ('')
     nB = target.size(0)
     nA = num_anchors
     nC = num_classes
-    anchor_step = len(anchors)/num_anchors
+    anchor_step = int(len(anchors)/num_anchors)
     conf_mask  = torch.ones(nB, nA, nH, nW) * noobject_scale
     coord_mask = torch.zeros(nB, nA, nH, nW)
     cls_mask   = torch.zeros(nB, nA, nH, nW)
@@ -272,12 +275,15 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
     tconf      = torch.zeros(nB, nA, nH, nW)
     tcls       = torch.zeros(nB, nA, nH, nW) 
 
+    # print (' -- [build_targets] conf_mask : ', conf_mask.shape)
+
     nAnchors = nA*nH*nW
     nPixels  = nH*nW
-    for b in xrange(nB):
+    for b in range(nB):
         cur_pred_boxes = pred_boxes[b*nAnchors:(b+1)*nAnchors].t()
+        # print (' -- [build_targets] cur_pred_boxes : ', cur_pred_boxes.shape)
         cur_ious = torch.zeros(nAnchors)
-        for t in xrange(50):
+        for t in range(50):
             if target[b][t*5+1] == 0:
                 break
             gx = target[b][t*5+1]*nW
@@ -285,8 +291,13 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             gw = target[b][t*5+3]*nW
             gh = target[b][t*5+4]*nH
             cur_gt_boxes = torch.FloatTensor([gx,gy,gw,gh]).repeat(nAnchors,1).t()
-            cur_ious = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False))
-        conf_mask[b][cur_ious>sil_thresh] = 0
+            cur_ious     = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False))
+        
+        #tmpp = cur_ious>sil_thresh
+        # print (' ------ b:', b, ' || cur_ious : ', cur_ious.shape, ' || sil_thresh : ', sil_thresh)
+        # print (' ------ b:', b, ' || cur_ious.view(nA,nH,nW) : ', cur_ious.view(nA,nH,nW).shape)
+        conf_mask[b][cur_ious.view(nA,nH,nW) > sil_thresh] = 0
+
     if seen < 12800:
        if anchor_step == 4:
            tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
@@ -300,8 +311,8 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
 
     nGT = 0
     nCorrect = 0
-    for b in xrange(nB):
-        for t in xrange(50):
+    for b in range(nB):
+        for t in range(50):
             if target[b][t*5+1] == 0:
                 break
             nGT = nGT + 1
@@ -309,13 +320,17 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             best_n = -1
             min_dist = 10000
             gx = target[b][t*5+1] * nW
+            gx = gx.float()
             gy = target[b][t*5+2] * nH
+            gy = gy.float()
             gi = int(gx)
             gj = int(gy)
             gw = target[b][t*5+3]*nW
+            gw = gw.float()
             gh = target[b][t*5+4]*nH
+            gh = gh.float()
             gt_box = [0, 0, gw, gh]
-            for n in xrange(nA):
+            for n in range(nA):
                 aw = anchors[anchor_step*n]
                 ah = anchors[anchor_step*n+1]
                 anchor_box = [0, 0, aw, ah]
@@ -336,15 +351,16 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             pred_box = pred_boxes[b*nAnchors+best_n*nPixels+gj*nW+gi]
 
             coord_mask[b][best_n][gj][gi] = 1
-            cls_mask[b][best_n][gj][gi] = 1
-            conf_mask[b][best_n][gj][gi] = object_scale
-            tx[b][best_n][gj][gi] = target[b][t*5+1] * nW - gi
-            ty[b][best_n][gj][gi] = target[b][t*5+2] * nH - gj
-            tw[b][best_n][gj][gi] = math.log(gw/anchors[anchor_step*best_n])
-            th[b][best_n][gj][gi] = math.log(gh/anchors[anchor_step*best_n+1])
-            iou = bbox_iou(gt_box, pred_box, x1y1x2y2=False) # best_iou
-            tconf[b][best_n][gj][gi] = iou
-            tcls[b][best_n][gj][gi] = target[b][t*5]
+            cls_mask[b][best_n][gj][gi]   = 1
+            conf_mask[b][best_n][gj][gi]  = object_scale
+            tx[b][best_n][gj][gi]         = target[b][t*5+1] * nW - gi
+            ty[b][best_n][gj][gi]         = target[b][t*5+2] * nH - gj
+            tw[b][best_n][gj][gi]         = math.log(gw/anchors[anchor_step*best_n])
+            th[b][best_n][gj][gi]         = math.log(gh/anchors[anchor_step*best_n+1])
+            # print (' -- t : ', t, ' || gt_box : ', gt_box, type(gt_box), ' || pred_box : ', pred_box.shape, type(pred_box))
+            iou                           = bbox_iou(gt_box, pred_box, x1y1x2y2=False) # best_iou
+            tconf[b][best_n][gj][gi]      = iou
+            tcls[b][best_n][gj][gi]       = target[b][t*5]
             if iou > 0.5:
                 nCorrect = nCorrect + 1
 
@@ -365,6 +381,10 @@ class RegionLoss(nn.Module):
         self.seen = 0
 
     def forward(self, output, target):
+        # print ('')
+        # print (' - [RegionLoss] : output : ', output.shape)
+        # print (' - [RegionLoss] : target : ',target.shape)
+
         #output : BxAs*(4+1+num_classes)*H*W
         t0 = time.time()
         nB = output.data.size(0)
@@ -372,6 +392,11 @@ class RegionLoss(nn.Module):
         nC = self.num_classes
         nH = output.data.size(2)
         nW = output.data.size(3)
+        # print (' - [RegionLoss] -- nB : ', nB)
+        # print (' - [RegionLoss] -- nA : ', nA)
+        # print (' - [RegionLoss] -- nC : ', nC)
+        # print (' - [RegionLoss] -- nH : ', nH)
+        # print (' - [RegionLoss] -- nW : ', nW)
 
         output   = output.view(nB, nA, (5+nC), nH, nW)
         x    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
@@ -384,30 +409,48 @@ class RegionLoss(nn.Module):
         t1 = time.time()
 
         pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
+        # print (' - [RegionLoss] : pred_boxes : ',pred_boxes.shape)
         grid_x = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
         grid_y = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
         anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0])).cuda()
         anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1])).cuda()
         anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
         anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
-        pred_boxes[0] = x.data + grid_x
-        pred_boxes[1] = y.data + grid_y
-        pred_boxes[2] = torch.exp(w.data) * anchor_w
-        pred_boxes[3] = torch.exp(h.data) * anchor_h
+
+        # print (' - [RegionLoss] -- x.data : ', x.shape, ' || grid_x : ', grid_x.shape)
+        # print (' - [RegionLoss] -- x.data : ', x.view(-1).shape, ' || grid_x : ', grid_x.shape)
+        #pred_boxes[0] = x.data + grid_x
+        pred_boxes[0] = x.view(-1).data + grid_x
+        # print (' - [RegionLoss] -- y.data : ', y.shape, ' || grid_y : ', grid_y.shape)
+        pred_boxes[1] = y.view(-1).data + grid_y
+        # print (' - [RegionLoss] -- w.data : ', w.shape, ' || anchor_w : ', anchor_w.shape)
+        pred_boxes[2] = torch.exp(w.view(-1).data) * anchor_w
+        # print (' - [RegionLoss] -- h.data : ', h.shape, ' || anchor_h : ', anchor_h.shape)
+        pred_boxes[3] = torch.exp(h.view(-1).data) * anchor_h
         pred_boxes = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4))
+        # print (' - [RegionLoss] : pred_boxes : ',pred_boxes.shape)
         t2 = time.time()
 
         nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
                                                                nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
         cls_mask = (cls_mask == 1)
-        nProposals = int((conf > 0.25).sum().data[0])
+
+        # print ('')
+        # print (' -- conf : ', conf.shape, ' || (conf > 0.25)', (conf > 0.25).sum().data.item())
+        # nProposals = int((conf > 0.25).sum().data[0])
+        nProposals = int((conf > 0.25).sum().data.item())
 
         tx    = Variable(tx.cuda())
         ty    = Variable(ty.cuda())
         tw    = Variable(tw.cuda())
         th    = Variable(th.cuda())
         tconf = Variable(tconf.cuda())
-        tcls  = Variable(tcls.view(-1)[cls_mask].long().cuda())
+        # print (' -- tcls : ', tcls.shape)
+        # print (' -- tcls : ', tcls.view(-1).shape)
+        # print (' -- cls_mask : ', cls_mask.shape)
+        # import pdb; pdb.set_trace()
+        # # tcls  = Variable(tcls.view(-1)[cls_mask].long().cuda())
+        tcls  = Variable(tcls.view(-1)[cls_mask.view(-1)].long().cuda())
 
         coord_mask = Variable(coord_mask.cuda())
         conf_mask  = Variable(conf_mask.cuda().sqrt())
@@ -431,7 +474,7 @@ class RegionLoss(nn.Module):
             print('     build targets : %f' % (t3 - t2))
             print('       create loss : %f' % (t4 - t3))
             print('             total : %f' % (t4 - t0))
-        print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], loss_cls.data[0], loss.data[0]))
+        # print ('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data.item(), loss_y.data.item(), loss_w.data.item(), loss_h.data.item(), loss_conf.data.item(), loss_cls.data.item(), loss.data.item()))
         return loss
 
 class MaxPoolStride1(nn.Module):
