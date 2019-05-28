@@ -904,7 +904,6 @@ def testYOLOv2():
             traceback.print_exc()
             pass
 
-<<<<<<< HEAD
 class TinyYoloNet(nn.Module):
     def __init__(self):
         super(TinyYoloNet, self).__init__()
@@ -991,8 +990,6 @@ class TinyYoloNet(nn.Module):
         start = load_conv_bn(buf, start, self.cnn[27], self.cnn[28])
         start = load_conv(buf, start, self.cnn[30])
 
-=======
->>>>>>> feature/prerak2
 ## --------------------------------------- YOLOV1 --------------------------------------- ##
 
 
