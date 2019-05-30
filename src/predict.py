@@ -23,12 +23,12 @@ from src.nets2_utils import *
 
 USE_GPU = torch.cuda.is_available()
 
-
-
-
 class PASCALVOCEval():
 
-    def __init__(self, MODEL_CFGFILE, MODEL_WEIGHTFILE, PASCAL_DIR, EVAL_IMAGELIST, EVAL_OUTPUTDIR, EVAL_PREFIX, EVAL_OUTPUTDIR_PKL):
+    def __init__(self, MODEL, MODEL_CFGFILE, MODEL_WEIGHTFILE
+    , PASCAL_DIR, EVAL_IMAGELIST, EVAL_OUTPUTDIR, EVAL_PREFIX, EVAL_OUTPUTDIR_PKL
+    , LOGGER='', LOGGER_EPOCH=-1):
+        self.MODEL            = MODEL
         self.MODEL_CFGFILE    = MODEL_CFGFILE
         self.MODEL_WEIGHTFILE = MODEL_WEIGHTFILE
         self.PASCAL_DIR       = PASCAL_DIR
@@ -36,6 +36,9 @@ class PASCALVOCEval():
         self.EVAL_OUTPUTDIR   = EVAL_OUTPUTDIR
         self.EVAL_PREFIX      = EVAL_PREFIX
         self.EVAL_OUTPUTDIR_PKL = EVAL_OUTPUTDIR_PKL
+        self.LOGGER             = LOGGER
+        self.LOGGER_EPOCH       = LOGGER_EPOCH
+        self.USE_GPU            = torch.cuda.is_available()
 
         self.VOC_CLASSES = (    # always index 0
                 'aeroplane', 'bicycle', 'bird', 'boat',
@@ -52,46 +55,57 @@ class PASCALVOCEval():
             'sheep', 'sofa', 'train', 'tvmonitor') 
         self.VOC_YEAR = '2007'
         
-    def predict(self,CONF_THRESH=0.005,NMS_THRESH=0.45):
+    def predict(self, BATCH_SIZE=2, CONF_THRESH=0.005,NMS_THRESH=0.45):
+        # CONF_THRESH=0.25,NMS_THRESH=0.45, IOU_THRESH    = 0.5
 
         if (1):
-            print (' - 1. Loading model')
-            model = getYOLOv2(self.MODEL_CFGFILE, self.MODEL_WEIGHTFILE)
-            model.eval()
+            if self.MODEL == '' or self.MODEL == None:
+                print (' - 1. Loading model : ', self.MODEL_WEIGHTFILE)
+                self.MODEL = getYOLOv2(self.MODEL_CFGFILE, self.MODEL_WEIGHTFILE)
+            self.MODEL.eval()
 
         if (1):
-            print (' - 2. Loading dataset')
             with open(self.EVAL_IMAGELIST) as fp:
                 tmp_files   = fp.readlines()
                 valid_files = [item.rstrip() for item in tmp_files]
-            eval_dataset = VOCDatasetv2(self.EVAL_IMAGELIST, shape=(model.width, model.height),
+            eval_dataset = VOCDatasetv2(self.EVAL_IMAGELIST, shape=(self.MODEL.width, self.MODEL.height),
                             shuffle=False,
                             transform=transforms.Compose([
                                 transforms.ToTensor(),
                             ]))
-            eval_batchsize = 2
+            eval_batchsize = BATCH_SIZE
             kwargs = {'num_workers': 4, 'pin_memory': True}
             eval_loader = torch.utils.data.DataLoader(
                 eval_dataset, batch_size=eval_batchsize, shuffle=False, **kwargs) 
 
-        if (1):
-            fps = [0]*model.num_classes
+        if (1): 
+            fps = [0]*self.MODEL.num_classes
             if not os.path.exists(self.EVAL_OUTPUTDIR):
                 os.mkdir(self.EVAL_OUTPUTDIR)
-            for i in range(model.num_classes):
+            for i in range(self.MODEL.num_classes):
                 buf = '%s/%s%s.txt' % (self.EVAL_OUTPUTDIR, self.EVAL_PREFIX, self.VOC_CLASSES[i])
                 fps[i] = open(buf, 'w')
     
         lineId = -1
-        print (' - Validating : Images : ', len(eval_loader))
+        
         with torch.no_grad():
-            with tqdm.tqdm_notebook(total = len(eval_loader)) as pbar:
+            val_loss_total       = 0.0
+            with tqdm.tqdm_notebook(total = len(eval_loader)*BATCH_SIZE) as pbar:
+                
                 for batch_idx, (data, target) in enumerate(eval_loader):
-                    pbar.update(1)
-                    data        = data.cuda()
-                    data        = Variable(data)
-                    output      = model(data).data
-                    batch_boxes = get_region_boxes(output, CONF_THRESH, model.num_classes, model.anchors, model.num_anchors, 0, 1)
+                    pbar.update(BATCH_SIZE)
+                    if self.USE_GPU:
+                        data   = data.cuda()
+                        target = target.cuda()                        
+                    data, target = Variable(data), Variable(target)
+                    output       = self.MODEL(data).data
+                    if self.LOGGER != '':
+                        region_loss  = self.MODEL.loss
+                        print (' - [DEBUG] region_loss : ', region_loss)
+                        val_loss     = region_loss(output, target)
+                        val_loss_total += val_loss.data
+
+                    batch_boxes = get_region_boxes(output, CONF_THRESH, self.MODEL.num_classes, self.MODEL.anchors, self.MODEL.num_anchors, 0, 1)
                     for i in range(output.size(0)):
                         lineId        = lineId + 1
                         fileId        = os.path.basename(valid_files[lineId]).split('.')[0]
@@ -112,7 +126,10 @@ class PASCALVOCEval():
                                 prob     = det_conf * cls_conf
                                 fps[cls_id].write('%s %f %f %f %f %f\n' % (fileId, prob, x1, y1, x2, y2))
 
-        for i in range(model.num_classes):
+        if self.LOGGER != '':
+            self.LOGGER.save_value('Total Loss', 'Val Loss', self.LOGGER_EPOCH+1, val_loss_total / len(eval_loader))
+
+        for i in range(self.MODEL.num_classes):
             fps[i].close()
         
         self._do_python_eval()
@@ -216,9 +233,9 @@ class PASCALVOCEval():
             recs = {}
             for i, imagename in enumerate(imagenames):
                 recs[imagename] = self.parse_rec(annopath.format(imagename))
-                if i % 100 == 0:
-                    # print ('Reading annotation for {0}/{1}'.format(i + 1, len(imagenames))
-                    print ('Reading annotation for ', i+1, '/', len(imagenames))
+                # if i % 100 == 0:
+                #     # print ('Reading annotation for {0}/{1}'.format(i + 1, len(imagenames))
+                #     print ('Reading annotation for ', i+1, '/', len(imagenames))
             # save
             # print ('Saving cached annotations to {0}'.format(cachefile))
 
@@ -311,7 +328,7 @@ class PASCALVOCEval():
         return rec, prec, ap
 
     def _do_python_eval(self):
-        print (' - Reading predictions from : ', self.EVAL_OUTPUTDIR, '(',self.EVAL_PREFIX,')')
+        print ('  -- Reading predictions from : ', self.EVAL_OUTPUTDIR, '/',self.EVAL_PREFIX,'*')
         res_prefix   = os.path.join(self.EVAL_OUTPUTDIR, self.EVAL_PREFIX)
         filename     = res_prefix + '{:s}.txt'
         annopath     = os.path.join(self.PASCAL_DIR, 'VOC' + self.VOC_YEAR, 'Annotations','{:s}.xml')
@@ -321,32 +338,33 @@ class PASCALVOCEval():
 
         # The PASCAL VOC metric changed in 2010
         use_07_metric = True if int(self.VOC_YEAR) < 2010 else False
-        print (' - VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
+        # print (' - VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
         #if not os.path.isdir(self.EVAL_OUTPUTDIR_PKL):
         #    os.mkdir(self.EVAL_OUTPUTDIR_PKL)
 
         finalMAP = []
-        with tqdm.tqdm_notebook(total = len(self.VOC_CLASSES_)) as pbar:
-            for i, cls in enumerate(self.VOC_CLASSES_):
-                pbar.update(1)
-                if cls == '__background__':
-                    continue
-                
-                rec, prec, ap = self.voc_eval(
-                    filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
-                    use_07_metric=use_07_metric)
-                aps += [ap]
-                finalMAP.append([cls, ap])
-                # print('AP for {} = {:.4f}'.format(cls, ap))
+        # with tqdm.tqdm_notebook(total = len(self.VOC_CLASSES_)) as pbar:
+        for i, cls in enumerate(self.VOC_CLASSES_):
+            # pbar.update(1)
+            if cls == '__background__':
+                continue
+            
+            rec, prec, ap = self.voc_eval(
+                filename, annopath, imagesetfile, cls, cachedir, ovthresh=0.5,
+                use_07_metric=use_07_metric)
+            aps += [ap]
+            finalMAP.append([cls, ap])
+            # print('AP for {} = {:.4f}'.format(cls, ap))
 
-                #with open(os.path.join(self.EVAL_OUTPUTDIR_PKL, cls + '_pr.pkl'), 'wb') as f:
-                #    cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
+            #with open(os.path.join(self.EVAL_OUTPUTDIR_PKL, cls + '_pr.pkl'), 'wb') as f:
+            #    cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
 
         df_MAP = pd.DataFrame(finalMAP, columns=['class', 'mAP'])        
         print('~~~~~~~~')
         print (df_MAP)
         print('~~~~~~~~')
         print('Mean AP = {:.4f}'.format(np.mean(aps)))
+
         # print('~~~~~~~~')
         # print('Results:')
         # for ap in aps:
@@ -360,6 +378,7 @@ class PASCALVOCEval():
         # print('Recompute with `./tools/reval.py --matlab ...` for your paper.')
         # print('-- Thanks, The Management')
         # print('--------------------------------------------------------------')
+
 
 class YOLOv2Test():
 

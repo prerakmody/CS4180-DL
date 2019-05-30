@@ -1,7 +1,6 @@
 #encoding:utf-8
 import os
 import sys
-import pdb
 import math
 import time
 import traceback
@@ -15,7 +14,10 @@ from torchvision import models
 import torch.nn.functional as F
 from torch.autograd import Variable
 
+# print (os.getcwd())
 from src.nets2_utils import *
+# from .nets2_utils import *
+
 # from pruning.weightPruning.layers import MaskedLinear
 
 torch.cuda.empty_cache()
@@ -256,307 +258,225 @@ def load_conv_bn(file, conv_model, bn_model):
     load_param(file, conv_model.weight)
 
 ## ----------------- YOLOV2:modelling
-def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
-    verbose    = 0
-    MAX_BBOX   = 50
-    THRESH_IOU = 0.5
+def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW, noobject_scale, object_scale, sil_thresh, seen):
+    # print ('')
+    nB = target.size(0)
+    nA = num_anchors
+    nC = num_classes
+    anchor_step = int(len(anchors)/num_anchors)
+    conf_mask  = torch.ones(nB, nA, nH, nW) * noobject_scale
+    coord_mask = torch.zeros(nB, nA, nH, nW)
+    cls_mask   = torch.zeros(nB, nA, nH, nW)
+    tx         = torch.zeros(nB, nA, nH, nW) 
+    ty         = torch.zeros(nB, nA, nH, nW) 
+    tw         = torch.zeros(nB, nA, nH, nW) 
+    th         = torch.zeros(nB, nA, nH, nW) 
+    tconf      = torch.zeros(nB, nA, nH, nW)
+    tcls       = torch.zeros(nB, nA, nH, nW) 
 
-    ## -------------------------- STEP 0 (init) -------------------------- ##
-    if (1):
-        nB          = target.size(0)
-        nA          = anchors_cell
-        nC          = num_classes
-        anchor_step = int(len(anchors_list)/anchors_cell)
+    # print (' -- [build_targets] conf_mask : ', conf_mask.shape)
+
+    nAnchors = nA*nH*nW
+    nPixels  = nH*nW
+    for b in range(nB):
+        cur_pred_boxes = pred_boxes[b*nAnchors:(b+1)*nAnchors].t()
+        # print (' -- [build_targets] cur_pred_boxes : ', cur_pred_boxes.shape)
+        cur_ious = torch.zeros(nAnchors)
+        for t in range(50):
+            if target[b][t*5+1] == 0:
+                break
+            gx = target[b][t*5+1]*nW
+            gy = target[b][t*5+2]*nH
+            gw = target[b][t*5+3]*nW
+            gh = target[b][t*5+4]*nH
+            cur_gt_boxes = torch.FloatTensor([gx,gy,gw,gh]).repeat(nAnchors,1).t()
+            cur_ious     = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False))
         
-        conf_mask   = torch.ones(nB, nA, nH, nW) * noobject_scale
-        coord_mask  = torch.zeros(nB, nA, nH, nW)
-        cls_mask    = torch.zeros(nB, nA, nH, nW)
+        #tmpp = cur_ious>sil_thresh
+        # print (' ------ b:', b, ' || cur_ious : ', cur_ious.shape, ' || sil_thresh : ', sil_thresh)
+        # print (' ------ b:', b, ' || cur_ious.view(nA,nH,nW) : ', cur_ious.view(nA,nH,nW).shape)
+        conf_mask[b][cur_ious.view(nA,nH,nW) > sil_thresh] = 0
 
-        tx          = torch.zeros(nB, nA, nH, nW) # True-x
-        ty          = torch.zeros(nB, nA, nH, nW) # True-y
-        tw          = torch.zeros(nB, nA, nH, nW) # True-w
-        th          = torch.zeros(nB, nA, nH, nW) # True-h
-        tconf       = torch.zeros(nB, nA, nH, nW) # True-conf (finally contains IoUs)
-        tcls        = torch.zeros(nB, nA, nH, nW) # True-cls (finally contains class ids)
+    if seen < 12800:
+       if anchor_step == 4:
+           tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
+           ty = torch.FloatTensor(anchors).view(num_anchors, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
+       else:
+           tx.fill_(0.5)
+           ty.fill_(0.5)
+       tw.zero_()
+       th.zero_()
+       coord_mask.fill_(1)
 
-        nAnchors = nA*nH*nW
-        nPixels  = nH*nW
+    nGT = 0
+    nCorrect = 0
+    for b in range(nB):
+        for t in range(50):
+            if target[b][t*5+1] == 0:
+                break
+            nGT = nGT + 1
+            best_iou = 0.0
+            best_n = -1
+            min_dist = 10000
+            gx = target[b][t*5+1] * nW
+            gx = gx.float()
+            gy = target[b][t*5+2] * nH
+            gy = gy.float()
+            gi = int(gx)
+            gj = int(gy)
+            gw = target[b][t*5+3]*nW
+            gw = gw.float()
+            gh = target[b][t*5+4]*nH
+            gh = gh.float()
+            gt_box = [0, 0, gw, gh]
+            for n in range(nA):
+                aw = anchors[anchor_step*n]
+                ah = anchors[anchor_step*n+1]
+                anchor_box = [0, 0, aw, ah]
+                iou  = bbox_iou(anchor_box, gt_box, x1y1x2y2=False)
+                if anchor_step == 4:
+                    ax = anchors[anchor_step*n+2]
+                    ay = anchors[anchor_step*n+3]
+                    dist = pow(((gi+ax) - gx), 2) + pow(((gj+ay) - gy), 2)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_n = n
+                elif anchor_step==4 and iou == best_iou and dist < min_dist:
+                    best_iou = iou
+                    best_n = n
+                    min_dist = dist
 
-        if verbose:
-            print ('  -- [build_targets]')
-            print ('  -- [build_targets] : Total Boxes : ', len(target[target != 0.0]) / 5)
-            print ('  -- [build_targets] pred_boxes : ', pred_boxes.shape, ' (transposed from RegionLoss)') # [nAnchors,4]
-            print ('  -- [build_targets] anchors_list : ', anchors_list)
-            print ('  -- [build_targets] anchors_cell : ', anchors_cell)
-            print ('  -- [build_targets] nAnchors : ', nAnchors)
-            print ('  -- [build_targets] anchor_step : ', anchor_step) 
-            print ('  -- [build_targets] nPixels : ', nPixels)
-            print ('  -- [build_targets] sil_thresh : ', sil_thresh)
+            gt_box = [gx, gy, gw, gh]
+            pred_box = pred_boxes[b*nAnchors+best_n*nPixels+gj*nW+gi]
 
-    ## -------------------------- STEP 1 (for confidence mask on the basis of IoU) -------------------------- ##
-    if (1):
-        for b in range(nB): # loop count = batch count
-            cur_pred_boxes = pred_boxes[b*nAnchors : (b+1)*nAnchors].t()
-            cur_ious = torch.zeros(nAnchors)
-            for t in range(MAX_BBOX):     # max of 50 BBs per image in GTruth
-                if target[b][t*5+1] == 0: # = target = [nB, 250] (a.k.a till all GTruth boxes are over)
-                    break
-                gx = target[b][t*5+1]*nW # (offset within grid cell in x-coordinates)
-                gy = target[b][t*5+2]*nH # (offset within grid cell in y-coordinates)
-                gw = target[b][t*5+3]*nW # ??
-                gh = target[b][t*5+4]*nH # ??
-                
-                if verbose:
-                    print ('  -- [build_targets][Box] : gx,gy,gw,gw : ', target[b][t*5+1], target[b][t*5+2], target[b][t*5+3], target[b][t*5+4])
-                    print ('  -- [build_targets][Box] : gx,gy,gw,gw : ', gx,gy,gw,gw)
-                
-                cur_gt_boxes = torch.FloatTensor([gx,gy,gw,gh]).repeat(nAnchors,1).t()
-                tmp          = bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False)
-                cur_ious     = torch.max(cur_ious, tmp)
-            
-            if (verbose):
-                print ('  -- [build_targets] cur_pred_boxes : ', cur_pred_boxes.shape)
-                print ('  -- [build_targets] cur_gt_boxes : ', cur_gt_boxes.shape)     # - [4, nAnchors]
-                print ('  -- [build_targets] cur_ious : ', cur_ious.shape)
-                # print (' -- [build_targets] : cur_ious.view(nA,nH,nW) > sil_thresh : ', cur_ious.view(nA,nH,nW) > sil_thresh)
-            
-            conf_mask[b][cur_ious.view(nA,nH,nW) > sil_thresh] = 0
-
-    ## -------------------------- STEP 2 (for tx, ty, tw, th, coord_mask) -------------------------- ##
-    if (1):
-        if seen < 12800:  # logic???
-            if anchor_step == 4: # anchor_step = len(anchors) / 5
-                tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-                ty = torch.FloatTensor(anchors).view(anchors_cell, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-            else:    
-                tx.fill_(0.5)
-                ty.fill_(0.5)
-            tw.zero_()
-            th.zero_()
-            coord_mask.fill_(1)
-
-    ## -------------------------- STEP 3 (for ?) -------------------------- ##
-    if (1):
-        if verbose : print ('  -- [build_targets]')
-        nGT      = 0
-        nCorrect = 0
-        for b in range(nB):
-            for t in range(MAX_BBOX):
-                if target[b][t*5+1] == 0:
-                    break
-                if verbose : print ('  -- [build_targets]')
-
-                nGT      = nGT + 1
-                best_iou = 0.0
-                best_n   = -1
-                min_dist = 10000
-
-                ## -------------------------- STEP 3.1 (extract one BBox) -------------------------- ##
-                if (1):
-                    gx = target[b][t*5+1] * nW
-                    gy = target[b][t*5+2] * nH
-                    gw = target[b][t*5+3] * nW
-                    gh = target[b][t*5+4] * nH
-                    gi = int(gx)
-                    gj = int(gy)
-                    if verbose:
-                        print ('  -- [build_targets][Box] : gx,gy,gw,gw : ', target[b][t*5+1], target[b][t*5+2], target[b][t*5+3], target[b][t*5+4])
-                        print ('  -- [build_targets][Box] : gx,gy,gw,gw : ', gx,gy,gw,gw)
-                        print ('  -- [build_targets][Box] : gi, gj : ', gi, gj)
-
-                ## -------------------------- STEP 3.2 (find best anchor for that BBox) -------------------------- ##
-                if (1):
-                    gt_box = [0, 0, gw, gh] # notice how the gx, gy have not been filled in since we are interested only in the [best] anchor
-                    for n in range(nA): #num_anchors
-                        aw         = anchors_list[anchor_step*n]
-                        ah         = anchors_list[anchor_step*n+1]
-                        anchor_box = [0, 0, aw, ah]
-                        iou  = bbox_iou(anchor_box, gt_box, x1y1x2y2=False)
-                        if anchor_step == 4:
-                            ax = anchors_list[anchor_step*n+2]
-                            ay = anchors_list[anchor_step*n+3]
-                            dist = pow(((gi+ax) - gx), 2) + pow(((gj+ay) - gy), 2)
-                        if iou > best_iou:
-                            best_iou = iou
-                            best_n = n
-                        elif anchor_step==4 and iou == best_iou and dist < min_dist:
-                            best_iou = iou
-                            best_n = n
-                            min_dist = dist
-                    
-                    if (verbose):
-                        print ('  -- [build_targets][best_anchor] : best_n', best_n) # best_n out of anchors_cell
-                        print ('  -- [build_targets][best_anchor] : best_iou', best_iou)
-
-                if (1):
-                
-                    coord_mask[b][best_n][gj][gi] = 1   # = coord_mask = [nB, nA, nH, nW]
-                    cls_mask[b][best_n][gj][gi]   = 1
-                    conf_mask[b][best_n][gj][gi]  = object_scale
-
-                    # YOLOv2 - Section II - Direct Location Prediction
-                    tx[b][best_n][gj][gi]         = target[b][t*5+1] * nW - gi # gx - gi #()
-                    ty[b][best_n][gj][gi]         = target[b][t*5+2] * nH - gj # gy - gj
-                    
-                    tw[b][best_n][gj][gi]         = math.log(gw/anchors_list[anchor_step*best_n])
-                    th[b][best_n][gj][gi]         = math.log(gh/anchors_list[anchor_step*best_n+1])
-                    
-                    gt_box                        = [gx, gy, gw, gh]
-                    pred_box                      = pred_boxes[b*nAnchors + best_n*nPixels + gj*nW + gi]
-                    iou                           = bbox_iou(gt_box, pred_box, x1y1x2y2=False) # best_iou
-                    tconf[b][best_n][gj][gi]      = iou # [Confused - why not 1!]
-                    tcls[b][best_n][gj][gi]       = target[b][t*5]
-                    if iou > THRESH_IOU:
-                        nCorrect = nCorrect + 1
-
-                    # pdb.set_trace()
+            coord_mask[b][best_n][gj][gi] = 1
+            cls_mask[b][best_n][gj][gi]   = 1
+            conf_mask[b][best_n][gj][gi]  = object_scale
+            tx[b][best_n][gj][gi]         = target[b][t*5+1] * nW - gi
+            ty[b][best_n][gj][gi]         = target[b][t*5+2] * nH - gj
+            tw[b][best_n][gj][gi]         = math.log(gw/anchors[anchor_step*best_n])
+            th[b][best_n][gj][gi]         = math.log(gh/anchors[anchor_step*best_n+1])
+            # print (' -- t : ', t, ' || gt_box : ', gt_box, type(gt_box), ' || pred_box : ', pred_box.shape, type(pred_box))
+            iou                           = bbox_iou(gt_box, pred_box, x1y1x2y2=False) # best_iou
+            tconf[b][best_n][gj][gi]      = iou
+            tcls[b][best_n][gj][gi]       = target[b][t*5]
+            if iou > 0.5:
+                nCorrect = nCorrect + 1
 
     return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls
 
 class RegionLoss(nn.Module):
-
     def __init__(self, num_classes=0, anchors=[], num_anchors=1):
         super(RegionLoss, self).__init__()
-        
-        self.num_classes    = num_classes
-        self.anchors        = anchors
-        self.num_anchors    = num_anchors
-        self.anchor_step    = int(len(anchors)/num_anchors)
-
-        self.coord_scale    = 1
+        self.num_classes = num_classes
+        self.anchors = anchors
+        self.num_anchors = num_anchors
+        self.anchor_step = int(len(anchors)/num_anchors)
+        self.coord_scale = 1
         self.noobject_scale = 1
-        self.object_scale   = 5
-        self.class_scale    = 1
-        self.thresh         = 0.6
-        
-        self.seen           = 0
+        self.object_scale = 5
+        self.class_scale = 1
+        self.thresh = 0.6
+        self.seen = 0
 
-        print ('  -- [DEBUG][RegionLoss] self.num_anchors : ', self.num_anchors)
+        print (' - [DEBUG][RegionLoss] self.num_anchors : ', self.num_anchors)
 
-    def forward(self, output, target, verbose=0):
-        verbose = 0
-        CONF_THRESH = 0.25
+    def forward(self, output, target):
+        # print ('')
+        # print (' - [RegionLoss] : output : ', output.shape)
+        # print (' - [RegionLoss] : target : ',target.shape)
 
-        ## -------------------------- STEP 0 (init) -------------------------- ## 
-        if (1):
-            nB = output.data.size(0)
-            nA = self.num_anchors
-            nC = self.num_classes
-            nH = output.data.size(2)
-            nW = output.data.size(3)
-        
-            if (verbose):
-                #output : B x A x (4+1+num_classes) x H x W 
-                print ('')
-                print (' - [RegionLoss] -- nB : ', nB)
-                print (' - [RegionLoss] -- nA : ', nA)
-                print (' - [RegionLoss] -- nC : ', nC)
-                print (' - [RegionLoss] -- nH : ', nH)
-                print (' - [RegionLoss] -- nW : ', nW)
-                print (' - [RegionLoss] : output : ', output.shape) # = torch.Size([1, 125, 13, 13])
-                print (' - [RegionLoss] : target : ',target.shape)  # = torch.Size([1, 250])
-            
-        ## -------------------------- STEP 1 (get all x,y,w,h,conf)-------------------------- ##
-        if (1):
-            output   = output.view(nB, nA, (5+nC), nH, nW)
-            if (verbose):
-                print (' - [RegionLoss] : output : ', output.shape) # = torch.Size([1, 5, 25, 13, 13])
+        #output : BxAs*(4+1+num_classes)*H*W
+        t0 = time.time()
+        nB = output.data.size(0)
+        nA = self.num_anchors
+        nC = self.num_classes
+        nH = output.data.size(2)
+        nW = output.data.size(3)
+        # print (' - [RegionLoss] -- nB : ', nB)
+        # print (' - [RegionLoss] -- nA : ', nA)
+        # print (' - [RegionLoss] -- nC : ', nC)
+        # print (' - [RegionLoss] -- nH : ', nH)
+        # print (' - [RegionLoss] -- nW : ', nW)
 
-            # x    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
-            x    = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW)) #[ since x,y are offsets within the grid cell we use a sigmoid]
-            y    = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW)) #[ since x,y are offsets within the grid cell we use a sigmoid]
-            w    = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
-            h    = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
-            conf = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
-            cls  = output.index_select(2, Variable(torch.linspace(5,5+nC-1,nC).long().cuda()))
-            cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
-            if (verbose):
-                print ('  -- [RegionLoss] : x : ', x.shape, ' || type : ', x.dtype) # = torch.Size([1, 5, 13, 13])  || type :  torch.float32
-                print ('  -- [RegionLoss] : y : ', y.shape, ' || type : ', y.dtype) # = torch.Size([1, 5, 13, 13])  || type :  torch.float32
-                print ('  -- [RegionLoss] : w : ', w.shape, ' || type : ', w.dtype) # = torch.Size([1, 5, 13, 13])  || type :  torch.float32
-                print ('  -- [RegionLoss] : h : ', h.shape, ' || type : ', h.dtype) # = torch.Size([1, 5, 13, 13])  || type :  torch.float32
-                print ('  -- [RegionLoss] : conf : ', conf.shape, ' || type : ', conf.dtype) # = torch.Size([1, 5, 13, 13])  || type :  torch.float32
+        output   = output.view(nB, nA, (5+nC), nH, nW)
+        # x    = F.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
+        x    = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([0]))).view(nB, nA, nH, nW))
+        y    = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([1]))).view(nB, nA, nH, nW))
+        w    = output.index_select(2, Variable(torch.cuda.LongTensor([2]))).view(nB, nA, nH, nW)
+        h    = output.index_select(2, Variable(torch.cuda.LongTensor([3]))).view(nB, nA, nH, nW)
+        conf = torch.sigmoid(output.index_select(2, Variable(torch.cuda.LongTensor([4]))).view(nB, nA, nH, nW))
+        cls  = output.index_select(2, Variable(torch.linspace(5,5+nC-1,nC).long().cuda()))
+        cls  = cls.view(nB*nA, nC, nH*nW).transpose(1,2).contiguous().view(nB*nA*nH*nW, nC)
+        t1 = time.time()
 
-        ## -------------------------- STEP 2 (grids and anchors ??) -------------------------- ##
-        if (1):
-            pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
-            # print (' - [RegionLoss] : pred_boxes : ',pred_boxes.shape)
-            grid_x     = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
-            grid_y     = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
-            anchor_w   = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0])).cuda()
-            anchor_h   = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1])).cuda()
-            anchor_w   = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
-            anchor_h   = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
+        pred_boxes = torch.cuda.FloatTensor(4, nB*nA*nH*nW)
+        # print (' - [RegionLoss] : pred_boxes : ',pred_boxes.shape)
+        grid_x = torch.linspace(0, nW-1, nW).repeat(nH,1).repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
+        grid_y = torch.linspace(0, nH-1, nH).repeat(nW,1).t().repeat(nB*nA, 1, 1).view(nB*nA*nH*nW).cuda()
+        anchor_w = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([0])).cuda()
+        anchor_h = torch.Tensor(self.anchors).view(nA, int(self.anchor_step)).index_select(1, torch.LongTensor([1])).cuda()
+        anchor_w = anchor_w.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
+        anchor_h = anchor_h.repeat(nB, 1).repeat(1, 1, nH*nW).view(nB*nA*nH*nW)
 
-            if (verbose):
-                print ('  -- [RegionLoss] : pred_boxes : ', pred_boxes.shape)  # = torch.Size([4, 845])
-                print ('  -- [RegionLoss] : grid_x : ', grid_x.shape)          # = torch.Size([845])
-                print ('  -- [RegionLoss] : grid_y : ', grid_y.shape)          # = torch.Size([845])
-                print ('  -- [RegionLoss] : anchor_w : ', anchor_w.shape)      # = torch.Size([845])
-                print ('  -- [RegionLoss] : anchor_h : ', anchor_h.shape)      # = torch.Size([845])
+        # print (' - [RegionLoss] -- x.data : ', x.shape, ' || grid_x : ', grid_x.shape)
+        # print (' - [RegionLoss] -- x.data : ', x.view(-1).shape, ' || grid_x : ', grid_x.shape)
+        #pred_boxes[0] = x.data + grid_x
+        pred_boxes[0] = x.view(-1).data + grid_x
+        # print (' - [RegionLoss] -- y.data : ', y.shape, ' || grid_y : ', grid_y.shape)
+        pred_boxes[1] = y.view(-1).data + grid_y
+        # print (' - [RegionLoss] -- w.data : ', w.shape, ' || anchor_w : ', anchor_w.shape)
+        pred_boxes[2] = torch.exp(w.view(-1).data) * anchor_w
+        # print (' - [RegionLoss] -- h.data : ', h.shape, ' || anchor_h : ', anchor_h.shape)
+        pred_boxes[3] = torch.exp(h.view(-1).data) * anchor_h
+        pred_boxes = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4))
+        # print (' - [RegionLoss] : pred_boxes : ',pred_boxes.shape)
+        t2 = time.time()
 
-            pred_boxes[0] = x.view(-1).data + grid_x
-            pred_boxes[1] = y.view(-1).data + grid_y
-            pred_boxes[2] = torch.exp(w.view(-1).data) * anchor_w
-            pred_boxes[3] = torch.exp(h.view(-1).data) * anchor_h
-            pred_boxes    = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4)) # = torch.Size([845,4])
+        nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
+                                                               nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
+        cls_mask = (cls_mask == 1)
 
-        ## -------------------------- STEP 3 (get true values) -------------------------- ##
-        if (1):
-            nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
-                                                                nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
-            cls_mask   = (cls_mask == 1)
-            nProposals = int((conf > CONF_THRESH).sum().data.item())
-            tx         = Variable(tx.cuda()) # True-x
-            ty         = Variable(ty.cuda()) # True-y
-            tw         = Variable(tw.cuda()) # True-w
-            th         = Variable(th.cuda()) # True-h
-            tconf      = Variable(tconf.cuda()) # True-conf
-            tcls       = Variable(tcls.view(-1)[cls_mask.view(-1)].long().cuda()) # True-class
-            if (verbose):
-                print ('  -- [RegionLoss]')
-                print ('  -- [RegionLoss] : tx : ', tx.shape, ' || type : ', tx.dtype)
-                print ('  -- [RegionLoss] : ty : ', ty.shape, ' || type : ', ty.dtype)
-                print ('  -- [RegionLoss] : tw : ', tw.shape, ' || type : ', tw.dtype)
-                print ('  -- [RegionLoss] : th : ', th.shape, ' || type : ', th.dtype)
-                print ('  -- [RegionLoss] : tconf : ', tconf.shape, ' || type : ', tconf.dtype)
-                print ('  -- [RegionLoss] : tls : ', tcls.shape, ' || type : ', tcls.dtype)
-                # print ('  -- [RegionLoss] tx : ', tx[tx != 0.0])
-                # print ('  -- [RegionLoss] ty : ', ty[ty != 0.0])
-                print ('  -- [RegionLoss] tw : ', tw[tw != 0.0])
-                print ('  -- [RegionLoss] th : ', th[th != 0.0])
-                print ('  -- [RegionLoss] tconf : ', tconf[tconf != 0.0])
-                print ('  -- [RegionLoss] tcls : ', tcls[tcls != 0.0])
-                import pdb; pdb.set_trace()
+        # print ('')
+        # print (' -- conf : ', conf.shape, ' || (conf > 0.25)', (conf > 0.25).sum().data.item())
+        # nProposals = int((conf > 0.25).sum().data[0])
+        nProposals = int((conf > 0.25).sum().data.item())
 
-            coord_mask = Variable(coord_mask.cuda())
-            conf_mask  = Variable(conf_mask.cuda().sqrt())
-            cls_mask   = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
-            cls        = cls[cls_mask].view(-1, nC)  
+        tx    = Variable(tx.cuda())
+        ty    = Variable(ty.cuda())
+        tw    = Variable(tw.cuda())
+        th    = Variable(th.cuda())
+        tconf = Variable(tconf.cuda())
+        # print (' -- tcls : ', tcls.shape)
+        # print (' -- tcls : ', tcls.view(-1).shape)
+        # print (' -- cls_mask : ', cls_mask.shape)
+        # import pdb; pdb.set_trace()
+        # # tcls  = Variable(tcls.view(-1)[cls_mask].long().cuda())
+        tcls  = Variable(tcls.view(-1)[cls_mask.view(-1)].long().cuda())
 
-        ## -------------------------- STEP 4 (losses) -------------------------- ##
-        if (1):
-            loss_x    = self.coord_scale * nn.MSELoss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
-            loss_y    = self.coord_scale * nn.MSELoss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
-            loss_w    = self.coord_scale * nn.MSELoss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
-            loss_h    = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
-            loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
-            loss_cls  = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
-            loss      = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls            
-            
-            if (0):
-                # F.mse_loss(torch.sqrt(box_pred_response[:,2:4]),torch.sqrt(box_target_response[:,2:4]),size_average=False)
-                import pdb; pdb.set_trace()
-                tmp = w*coord_mask
-                print ('  - [RegionLoss][loss_w] : ', tmp, ' || dtype : ', type(tmp))
-                print ('  - [RegionLoss][loss_w] : ', sqrt(tmp))
-                loss_w    = self.coord_scale * nn.MSELoss(size_average=False)(torch.sqrt(w*coord_mask), torch.sqrt(tw*coord_mask))/2.0
-                loss_h    = self.coord_scale * nn.MSELoss(size_average=False)(torch.sqrt(h*coord_mask), torch.sqrt(th*coord_mask))/2.0
+        coord_mask = Variable(coord_mask.cuda())
+        conf_mask  = Variable(conf_mask.cuda().sqrt())
+        cls_mask   = Variable(cls_mask.view(-1, 1).repeat(1,nC).cuda())
+        cls        = cls[cls_mask].view(-1, nC)  
 
-            print ('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data.item(), loss_y.data.item(), loss_w.data.item(), loss_h.data.item(), loss_conf.data.item(), loss_cls.data.item(), loss.data.item()))
-        else:
-            pass
+        t3 = time.time()
 
+        loss_x = self.coord_scale * nn.MSELoss(size_average=False)(x*coord_mask, tx*coord_mask)/2.0
+        loss_y = self.coord_scale * nn.MSELoss(size_average=False)(y*coord_mask, ty*coord_mask)/2.0
+        loss_w = self.coord_scale * nn.MSELoss(size_average=False)(w*coord_mask, tw*coord_mask)/2.0
+        loss_h = self.coord_scale * nn.MSELoss(size_average=False)(h*coord_mask, th*coord_mask)/2.0
+        loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
+        loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
+        loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
+        t4 = time.time()
+        if False:
+            print('-----------------------------------')
+            print('        activation : %f' % (t1 - t0))
+            print(' create pred_boxes : %f' % (t2 - t1))
+            print('     build targets : %f' % (t3 - t2))
+            print('       create loss : %f' % (t4 - t3))
+            print('             total : %f' % (t4 - t0))
+        # print ('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data.item(), loss_y.data.item(), loss_w.data.item(), loss_h.data.item(), loss_conf.data.item(), loss_cls.data.item(), loss.data.item()))
         return loss
 
 class MaxPoolStride1(nn.Module):
@@ -612,28 +532,20 @@ class EmptyModule(nn.Module):
 # support route shortcut and reorg
 class Darknet(nn.Module):
 
-    def __init__(self, cfgfile, verbose=0):
+    def __init__(self, cfgfile):
         super(Darknet, self).__init__()
         self.blocks = parse_cfg(cfgfile)
         self.models = self.create_network(self.blocks) # merge conv, bn,leaky
-        self.loss   = self.models[len(self.models)-1]
+        self.loss = self.models[len(self.models)-1]
 
-        self.width  = int(self.blocks[0]['width'])
+        self.width = int(self.blocks[0]['width'])
         self.height = int(self.blocks[0]['height'])
 
         if self.blocks[(len(self.blocks)-1)]['type'] == 'region':
-            self.anchors     = self.loss.anchors
+            self.anchors = self.loss.anchors
             self.num_anchors = self.loss.num_anchors
             self.anchor_step = self.loss.anchor_step
             self.num_classes = self.loss.num_classes
-
-            # if verbose:
-            if 1:
-                print ('  -- [DEBUG][Darknet] self.anchors : ', self.anchors)
-                print ('  -- [DEBUG][Darknet] self.num_anchors : ', self.num_anchors)
-                print ('  -- [DEBUG][Darknet] self.anchor_step : ', self.anchor_step)
-                print ('  -- [DEBUG][Darknet] self.num_classes : ', self.num_classes)
-                print ('  -- [DEBUG][Darknet] self.loss : ', self.loss)
 
         self.header = torch.IntTensor([0,0,0,0])
         self.seen = 0
@@ -968,3 +880,315 @@ def getYOLOv2(cfgfile, weightfile):
     if USE_GPU:
         model.cuda()
     return model
+
+def testYOLOv2():
+
+    cfgfile    = 'data/cfg/github_pjreddie/yolov2-voc.cfg'
+    weightfile = 'data/weights/github_pjreddie/yolov2-voc.weights'
+    model      = getYOLOv2(cfgfile, weightfile) 
+    print (' - 1. Model is loaded!')
+
+    imgdir      = 'data/dataset/yolo_samples'
+    namesfile   = 'data/dataset/voc.names'
+    class_names = load_class_names(namesfile)
+    for each in ['dog.jpg', 'eagle.jpg',  'giraffe.jpg',  'horses.jpg',  'person.jpg',  'scream.jpg']:
+        try:
+            print ('')
+            imgfile = os.path.join(imgdir, each)        
+            img     = Image.open(imgfile).convert('RGB')
+            sized   = img.resize((model.width, model.height))
+
+            start  = time.time()
+            boxes  = do_detect(model, sized, 0.5, 0.4, USE_GPU)
+            finish = time.time()
+            print('%s: Predicted in %f seconds.' % (imgfile, (finish-start)))
+            plot_boxes(img, boxes, os.path.join(imgdir, '_' + each), class_names)
+        except:
+            traceback.print_exc()
+            pass
+
+class TinyYoloNet(nn.Module):
+    def __init__(self):
+        super(TinyYoloNet, self).__init__()
+        self.seen = 0
+        self.num_classes = 20
+        self.anchors = [1.08,1.19,  3.42,4.41,  6.63,11.38,  9.42,5.11,  16.62,10.52]
+        self.num_anchors = len(self.anchors)/2
+        num_output = (5+self.num_classes)*self.num_anchors
+        self.width = 160
+        self.height = 160
+
+        self.loss = RegionLoss(self.num_classes, self.anchors, self.num_anchors)
+        self.cnn = nn.Sequential(OrderedDict([
+            # conv1
+            ('conv1', nn.Conv2d( 3, 16, 3, 1, 1, bias=False)),
+            ('bn1', nn.BatchNorm2d(16)),
+            ('leaky1', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool1', nn.MaxPool2d(2, 2)),
+
+            # conv2
+            ('conv2', nn.Conv2d(16, 32, 3, 1, 1, bias=False)),
+            ('bn2', nn.BatchNorm2d(32)),
+            ('leaky2', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool2', nn.MaxPool2d(2, 2)),
+
+            # conv3
+            ('conv3', nn.Conv2d(32, 64, 3, 1, 1, bias=False)),
+            ('bn3', nn.BatchNorm2d(64)),
+            ('leaky3', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool3', nn.MaxPool2d(2, 2)),
+
+            # conv4
+            ('conv4', nn.Conv2d(64, 128, 3, 1, 1, bias=False)),
+            ('bn4', nn.BatchNorm2d(128)),
+            ('leaky4', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool4', nn.MaxPool2d(2, 2)),
+
+            # conv5
+            ('conv5', nn.Conv2d(128, 256, 3, 1, 1, bias=False)),
+            ('bn5', nn.BatchNorm2d(256)),
+            ('leaky5', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool5', nn.MaxPool2d(2, 2)),
+
+            # conv6
+            ('conv6', nn.Conv2d(256, 512, 3, 1, 1, bias=False)),
+            ('bn6', nn.BatchNorm2d(512)),
+            ('leaky6', nn.LeakyReLU(0.1, inplace=True)),
+            ('pool6', MaxPoolStride1()),
+
+            # conv7
+            ('conv7', nn.Conv2d(512, 1024, 3, 1, 1, bias=False)),
+            ('bn7', nn.BatchNorm2d(1024)),
+            ('leaky7', nn.LeakyReLU(0.1, inplace=True)),
+
+            # conv8
+            ('conv8', nn.Conv2d(1024, 1024, 3, 1, 1, bias=False)),
+            ('bn8', nn.BatchNorm2d(1024)),
+            ('leaky8', nn.LeakyReLU(0.1, inplace=True)),
+
+            # output
+            ('output', nn.Conv2d(1024, num_output, 1, 1, 0)),
+        ]))
+
+    def forward(self, x):
+        x = self.cnn(x)
+        return x
+
+    def print_network(self):
+        print(self)
+
+    def load_weights(self, path):
+        #buf = np.fromfile('tiny-yolo-voc.weights', dtype = np.float32)
+        buf = np.fromfile(path, dtype = np.float32)
+        start = 4
+        
+        start = load_conv_bn(buf, start, self.cnn[0], self.cnn[1])
+        start = load_conv_bn(buf, start, self.cnn[4], self.cnn[5])
+        start = load_conv_bn(buf, start, self.cnn[8], self.cnn[9])
+        start = load_conv_bn(buf, start, self.cnn[12], self.cnn[13])
+        start = load_conv_bn(buf, start, self.cnn[16], self.cnn[17])
+        start = load_conv_bn(buf, start, self.cnn[20], self.cnn[21])
+        
+        start = load_conv_bn(buf, start, self.cnn[24], self.cnn[25])
+        start = load_conv_bn(buf, start, self.cnn[27], self.cnn[28])
+        start = load_conv(buf, start, self.cnn[30])
+
+## --------------------------------------- YOLOV1 --------------------------------------- ##
+
+
+def getYOLOv1Self(name=''):
+
+    cfg = {
+        'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+        'B': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+        'D': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+        'E': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+    }
+
+    if name != '':
+        myYOLO            = YOLOv1Self(name, cfg['D'], batch_norm=True)
+        VGG               = models.vgg16_bn(pretrained=True)
+        state_dict_VGG    = VGG.state_dict()
+        state_dict_myYOLO = myYOLO.state_dict()
+        
+        for k in state_dict_VGG.keys():
+            if k in state_dict_myYOLO.keys() and k.startswith('features'):
+                state_dict_myYOLO[k] = state_dict_VGG[k]
+        myYOLO.load_state_dict(state_dict_myYOLO)
+        return myYOLO
+
+    else:
+        print (' - Pass a name for your model')
+        sys.exit(1)
+
+class YOLOv1Self(nn.Module):
+
+    def __init__(self, name, cfg, batch_norm, image_size=448):
+        super(YOLOv1Self, self).__init__()
+        self.name       = name
+        self.features   = self.getFeatureLayers(cfg, batch_norm)
+        self.linear1    = MaskedLinear(512 * 7 * 7, 4096)
+        self.linear2    = MaskedLinear(4096, 1470)
+        self.classifier = nn.Sequential( # add the regression part to the features
+            # nn.Linear(512 * 7 * 7, 4096),
+            self.linear1,
+            nn.ReLU(True),
+            nn.Dropout(),
+            # nn.Linear(4096, 1470),
+            self.linear2,
+        )
+        self._initialize_weights()
+        self.image_size = image_size
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        x = torch.sigmoid(x)
+        x = x.view(-1,7,7,30)
+        return x
+
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+                if m.bias is not None:
+                    m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                m.weight.data.normal_(0, 0.01)
+                m.bias.data.zero_()
+
+
+    def getFeatureLayers(self, cfg, batch_norm=False):
+        if (1):
+            params_in_channels  = 3
+            params_conv_stride  = 1
+            params_conv_size    = 3 
+            params_first_flag   = True
+            params_pool_stride  = 2
+            params_pool_kernel  = 2
+
+        layers = []
+        for item in cfg:
+            params_conv_stride = 1
+            if (item == 64 and params_first_flag):
+                params_conv_stride = 2
+                params_first_flag  = False
+
+            if item == 'M': # max-pooling
+                layers += [nn.MaxPool2d(kernel_size=params_pool_kernel, stride=params_pool_stride)]
+            else:
+                params_kernels = item
+                conv2d = nn.Conv2d(params_in_channels, params_kernels, kernel_size=params_conv_size, stride=params_conv_stride, padding=1)
+                if batch_norm:
+                    layers += [conv2d, nn.BatchNorm2d(item), nn.ReLU(inplace=True)]
+                else:
+                    layers += [conv2d, nn.ReLU(inplace=True)]
+                params_in_channels = item
+        return nn.Sequential(*layers)
+
+    def set_masks(self, masks):
+        self.linear1.set_mask(masks[0])
+        self.linear2.set_mask(masks[1])
+
+def testYOLOv1():
+    if (0):
+        net = getYOLOv1Self()
+        img = torch.rand(1,3,448,448)
+        img = Variable(img)
+        output = net(img)
+        print(output.size())
+    else:
+        pass
+
+# if __name__ == '__main__':
+#     # testYOLOv1()
+#     # testYOLOv2()
+#     # blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg',1)
+#     blocks = parse_cfg('/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg',1)
+#     model  = create_network(self.blocks) # merge conv, bn,leaky
+    
+
+
+
+"""
+URLs
+    - YOLOv1 
+        - https://pjreddie.com/darknet/yolov1/
+            - wget http://pjreddie.com/media/files/yolov1/yolov1.weights (~800MB) [trained on 2007 train/val+ 2012 train/val]
+            - https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov1.cfg (output = 1715 = 7x7x(3x5 + 20) ) 
+                - Locally Connected FC (https://discuss.pytorch.org/t/how-does-pytorch-implement-local-convolutional-layer-local-connected-layer/4316)
+                    - https://github.com/pjreddie/darknet/issues/876
+                    - https://github.com/pytorch/pytorch/issues/499
+                    - https://github.com/pytorch/pytorch/compare/master...1zb:conv-local
+                    - Theory : https://www.cs.toronto.edu/~jlucas/teaching/csc411/lectures/lec11_handout.pdf
+                - Locally Connected FC (https://www.tensorflow.org/api_docs/python/tf/keras/layers/LocallyConnected2D)
+    - YOLOv2    
+        - https://pjreddie.com/darknet/yolov2/
+            - https://github.com/pjreddie/darknet/blob/master/cfg/yolov2-voc.cfg [416 x 416]
+            - wget https://pjreddie.com/media/files/yolov2-voc.weights (~MB) [trained on 2007 train/val+ 2012 train/val]
+        - On other githubs
+            - wget http://pjreddie.com/media/files/yolo.weights
+            - wget https://pjreddie.com/media/files/yolo-voc.weights
+    - Dataset
+        - <> 
+
+Results
+    - YOLOv1 (inside YOLO paper)
+        - (2007 + 2012) = 63.4 mAP
+        - (2007 + 2012) = 66.4 mAP (VGG-16)
+    - repo1 (https://github.com/yxlijun/tensorflow-yolov1)
+        - (2007 + 2012) = 65.3 mAP (VGG-16)
+        - (2007 + 2012) = 66.12 mAP (VGG-19)
+        - (2007 + 2012) = 65.23 mAP (Resnet)
+
+Pre-trained Weights
+    - YOLOv1
+        - repo1 : https://github.com/dshahrokhian/YOLO_tensorflow
+            - YOLO_small.ckpt
+        - repo1 : https://docs.openvinotoolkit.org/latest/_docs_MO_DG_prepare_model_convert_model_tf_specific_Convert_YOLO_From_Tensorflow.html
+            - convert from pjreddie --> tensorflow --> convert to pytorch
+
+Converter
+    - https://github.com/microsoft/MMdnn
+    - https://github.com/marvis/pytorch-caffe-darknet-convert
+    - https://github.com/AceCoooool/YOLO-pytorch/blob/master/tools/yad2t.py
+    - https://github.com/thtrieu/darkflow.git
+        - git clone https://github.com/thtrieu/darkflow.git
+        - cd darkflow
+        - pip install -e .
+        - wget http://pjreddie.com/media/files/yolov1/yolov1.weights
+        - flow --model cfg/v1.1/yolov1.cfg --load ../../repo1/data/weights/github_pjreddie/yolov1.weights --savepb
+        - Colab
+            - # ! git clone https://github.com/thtrieu/darkflow.git
+                # ! cd darkflow && pip install -e .
+                # ! wget http://pjreddie.com/media/files/yolov1/yolov1.weights
+                # ! flow -h
+                # ! ls -l
+                # ! flow --model darkflow/cfg/v1.1/yolov1.cfg --load yolov1.weights --savepb
+
+Random
+    - https://github.com/happyjin/pytorch-YOLO/blob/master/network.py
+    - https://github.com/kevin970401/pytorch-YOLO-v1/blob/master/models/yolo.py
+"""
+
+"""
+We train the network for about 
+ - 135 epochs on the train-ing and validation data sets from PASCAL VOC 2007 and 2012. 
+ - When testing on 2012 we also include the VOC 2007 test data for training. 
+ - Throughout training we use a 
+    - batch size of 64, a momentum of 0.9 and a decay of 0.0005. 
+ - Our learning rate schedule is as follows: 
+    - For the first epochs we slowly raise the learning rate from 10−3 to 10−2. 
+    - If we start at a high learning rate our model often diverges due to unstable gradients. 
+    - We continue training with 
+        - 10−2 for 75 epochs
+        - then 10−3 for 30 epochs
+        - and finally 10−4 for 30 epochs
+"""
+
+

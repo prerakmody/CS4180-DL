@@ -10,26 +10,26 @@ import xml.etree.ElementTree as ET
 
 import torch
 import torch.utils.data as data
+from torchvision import transforms
 
 ## --------------------------------------- PASCAL VOC - v2 --------------------------------------- ##
 
 class VOCDatasetv2(data.Dataset):
 
-    def __init__(self, root, shape=None, shuffle=True, transform=None, target_transform=None, train=False, seen=0, batch_size=64, num_workers=4):
+    def __init__(self, root, shape=None, shuffle=True, transform=None, target_transform=None, train=False, num_workers=1, seen=0):
        with open(root, 'r') as file:
            self.lines = file.readlines()
 
        if shuffle:
            random.shuffle(self.lines)
 
-       self.nSamples  = len(self.lines)
-       self.transform = transform
+       self.nSamples         = len(self.lines)
+       self.transform        = transform
        self.target_transform = target_transform
-       self.train = train
-       self.shape = shape
-       self.seen = seen
-       self.batch_size = batch_size
-       self.num_workers = num_workers
+       self.train            = train
+       self.shape            = shape
+       self.seen             = seen
+       self.num_workers      = num_workers
 
     def __len__(self):
         return self.nSamples
@@ -37,39 +37,41 @@ class VOCDatasetv2(data.Dataset):
     def __getitem__(self, index):
         assert index <= len(self), 'index range error'
         imgpath = self.lines[index].rstrip()
-
-        if self.train and index % 64== 0:
-            if self.seen < 4000*64:
-               width = 13*32
-               self.shape = (width, width)
-            elif self.seen < 8000*64:
-               width = (random.randint(0,3) + 13)*32
-               self.shape = (width, width)
-            elif self.seen < 12000*64:
-               width = (random.randint(0,5) + 12)*32
-               self.shape = (width, width)
-            elif self.seen < 16000*64:
-               width = (random.randint(0,7) + 11)*32
-               self.shape = (width, width)
-            else: # self.seen < 20000*64:
-               width = (random.randint(0,9) + 10)*32
-               self.shape = (width, width)
+        
+        if (0): # different images sizes
+            if self.train and index % 64== 0:
+                if self.seen < 4000*64:
+                    width = 13*32
+                    self.shape = (width, width)
+                elif self.seen < 8000*64:
+                    width = (random.randint(0,3) + 13)*32
+                    self.shape = (width, width)
+                elif self.seen < 12000*64:
+                    width = (random.randint(0,5) + 12)*32
+                    self.shape = (width, width)
+                elif self.seen < 16000*64:
+                    width = (random.randint(0,7) + 11)*32
+                    self.shape = (width, width)
+                else: # self.seen < 20000*64:
+                    width = (random.randint(0,9) + 10)*32
+                    self.shape = (width, width)
 
         if self.train:
-            jitter = 0.2
-            hue = 0.1
+            jitter     = 0.2
+            hue        = 0.1
             saturation = 1.5 
-            exposure = 1.5
+            exposure   = 1.5
 
             img, label = load_data_detection(imgpath, self.shape, jitter, hue, saturation, exposure)
-            label = torch.from_numpy(label)
+            label      = torch.from_numpy(label)
+
         else:
             img = Image.open(imgpath).convert('RGB')
             if self.shape:
                 img = img.resize(self.shape)
     
             labpath = imgpath.replace('images', 'labels').replace('JPEGImages', 'labels').replace('.jpg', '.txt').replace('.png','.txt')
-            label = torch.zeros(50*5)
+            label   = torch.zeros(50*5)
             #if os.path.getsize(labpath):
             #tmp = torch.from_numpy(np.loadtxt(labpath))
             try:
@@ -92,7 +94,7 @@ class VOCDatasetv2(data.Dataset):
             label = self.target_transform(label)
 
         self.seen = self.seen + self.num_workers
-        return (img, label)
+        return (img, label.float())
 
 def scale_image_channel(im, c, v):
     cs = list(im.split())
@@ -543,28 +545,49 @@ class YoloDataset(data.Dataset):
     
 
 if __name__ == "__main__":
-    pass
-    # dir_annotations  = 'yolo/data/VOCdevkit_trainval/VOC2007'
-    # file_annotations = 'yolo/data/VOCdevkit_trainval/VOC2007/anno_trainval.txt'
-    # image_size       = 448
-    # grid_num         = 14
-    # flag_augm        = 0
-    # train            = True
-    
-    # YoloDatasetTrain = YoloDataset(dir_annotations, file_annotations
-    #                             , train
-    #                             , image_size, grid_num
-    #                             , flag_augm
-    #                             , transform = [transforms.ToTensor()] )
-    
-    # print (' - Total Images: ', len(YoloDatasetTrain))
-    # if (1):
-    #     idx = np.random.randint(len(YoloDatasetTrain))
-    #     X,Y = YoloDatasetTrain[idx]
-    #     YoloDatasetTrain.display(X)
+    if (0):
+        pass
+        # dir_annotations  = 'yolo/data/VOCdevkit_trainval/VOC2007'
+        # file_annotations = 'yolo/data/VOCdevkit_trainval/VOC2007/anno_trainval.txt'
+        # image_size       = 448
+        # grid_num         = 14
+        # flag_augm        = 0
+        # train            = True
         
-    # DataLoaderTrain = DataLoader(YoloDatasetTrain, batch_size=1,shuffle=False,num_workers=0)
-    # train_iter = iter(DataLoaderTrain)
-    # for i in range(2):
-    #     img,target = next(train_iter)
-        # print(img,target) 
+        # YoloDatasetTrain = YoloDataset(dir_annotations, file_annotations
+        #                             , train
+        #                             , image_size, grid_num
+        #                             , flag_augm
+        #                             , transform = [transforms.ToTensor()] )
+        
+        # print (' - Total Images: ', len(YoloDatasetTrain))
+        # if (1):
+        #     idx = np.random.randint(len(YoloDatasetTrain))
+        #     X,Y = YoloDatasetTrain[idx]
+        #     YoloDatasetTrain.display(X)
+            
+        # DataLoaderTrain = DataLoader(YoloDatasetTrain, batch_size=1,shuffle=False,num_workers=0)
+        # train_iter = iter(DataLoaderTrain)
+        # for i in range(2):
+        #     img,target = next(train_iter)
+            # print(img,target) 
+    else:
+        TRAINLIST  = '../data/dataset/VOCdevkit/voc_train.txt'
+        WIDTH      = 416
+        HEIGHT     = 416
+        BATCH_SIZE = 1 
+        dataset_pascal = VOCDatasetv2(TRAINLIST, shape=(WIDTH, HEIGHT),
+                            shuffle=True,
+                            transform=transforms.Compose([
+                                transforms.ToTensor(),
+                            ]),
+                            train=True,
+                            seen=0)
+        
+        rand_idx = np.random.randint(len(dataset_pascal))
+        print (' - rand_idx : ', rand_idx)
+        X,Y = dataset_pascal[rand_idx]
+        print (' - X : ', X.shape, ' || dtype : ', X.dtype)
+        print (' - Y : ', Y.shape, ' || dtype : ', Y.dtype)
+        print (' - Y : ', Y)
+        # dataset_pascal_loader = torch.utils.data.DataLoader(dataset_pascal, batch_size=BATCH_SIZE, shuffle=False)            
