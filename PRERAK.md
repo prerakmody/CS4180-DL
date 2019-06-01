@@ -99,6 +99,9 @@
                 - thus they are modified in src/nets.py (RegionLoss)
 
 
-## Next Steps
-    - Push code to github and make it runnable
-    - Share configurations with everyone and ask them to report the results
+## Next Steps 
+    - Save weights for every epoch (Rukai)
+    - Prune the network, see if the pruned weights remain unchanged during retraining (Rukai and Tomas) by 8th of June
+    - Share configurations with everyone and ask them to report the results (mAP) by 9th of June 
+    - Keep up with the report (Anish and Soroosh)
+    - Poster presentation
