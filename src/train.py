@@ -11,11 +11,57 @@ import torch.backends.cudnn as cudnn
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
-import src.dataloader as dataloader
-from src.nets2_utils import *
-from src.nets import *
-from src.predict import *
+runtime = 'online' # ['local', 'online']
 
+if (runtime == 'online'):
+    import src.dataloader as dataloader
+    from src.nets2_utils import *
+    if (1):
+        from src.predict import *
+        from src.nets import *
+
+elif runtime == 'local':
+    import dataloader as dataloader
+    from nets2_utils import *
+    from predict import *
+    from nets import *
+
+
+def parse_cfg(cfgfile, verbose=0):
+    blocks = []
+    fp     = open(cfgfile, 'r')
+    block  =  None
+    line   = fp.readline()
+    while line != '':
+        line = line.rstrip()
+        if line == '' or line[0] == '#':
+            line = fp.readline()
+            continue
+
+        elif line[0] == '[':
+            if block:
+                if verbose:
+                    print ('')
+                    print (' - block : ', block)
+                blocks.append(block)
+            block = dict()
+            block['type'] = line.lstrip('[').rstrip(']')
+            # set default value
+            if block['type'] == 'convolutional':
+                block['batch_normalize'] = 0
+        else:
+            key,value = line.split('=')
+            key = key.strip()
+            if key == 'type':
+                key = '_type'
+            value = value.strip()
+            block[key] = value
+        line = fp.readline()
+
+    if block:
+        blocks.append(block)
+    fp.close()
+    return blocks
 
 ## --------------------------------------- YOLOV2 --------------------------------------- ##
 class YOLOv2Train():
@@ -34,118 +80,116 @@ class YOLOv2Train():
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
                     , BATCH_SIZE
-                    , LOGGER=''):
-        net_options   = parse_cfg(MODEL_CFG)[0]
-        self.trainlist     = PASCAL_TRAIN
-        self.testlist      = PASCAL_VALID
-        backupdir     = TRAIN_LOGDIR
-        nsamples      = file_lines(self.trainlist)
-        gpus          = "1"
-        ngpus         = 1
-        num_workers   = 4
-        cfgfile       = MODEL_CFG
-        weightfile    = MODEL_WEIGHT
+                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
 
-        # model/net configuration
-        self.batch_size    = BATCH_SIZE #int(net_options['batch'])
-        max_batches   = int(net_options['max_batches'])
-        learning_rate = float(net_options['learning_rate'])
-        momentum      = float(net_options['momentum'])
-        decay         = float(net_options['decay'])
-        steps         = [float(step) for step in net_options['steps'].split(',')]
-        scales        = [float(scale) for scale in net_options['scales'].split(',')]
-
-        #Train parameters
-        max_epochs    = int(max_batches*self.batch_size/nsamples+1)
-        self.use_cuda      = True
-        seed          = int(time.time())
-        eps           = 1e-5
-        save_interval = 10  # epoches
-        dot_interval  = 70  # batches
-
-        # Test parameters
-        conf_thresh   = 0.25
-        nms_thresh    = 0.4
-        iou_thresh    = 0.5
-
-        if not os.path.exists(backupdir):
-            print (' - backupdir :', backupdir)
-            os.mkdir(backupdir)
-
-        ###############
-        torch.manual_seed(seed)
-        if self.use_cuda:
-            os.environ['CUDA_VISIBLE_DEVICES'] = gpus
-            torch.cuda.manual_seed(seed)
-
-        self.model       = Darknet(cfgfile)
-        region_loss      = self.model.loss
-
-        self.model.load_weights(weightfile)
-        # model.print_network()
-
-        region_loss.seen  = self.model.seen
-        processed_batches = int(self.model.seen/self.batch_size)
-
-        self.init_width        = self.model.width
-        self.init_height       = self.model.height
-        init_epoch        = int(self.model.seen/nsamples) 
-
-        kwargs = {'num_workers': num_workers, 'pin_memory': True} if self.use_cuda else {}
-        
-
-        if self.use_cuda:
-            if ngpus > 1:
-                self.model = torch.nn.DataParallel(self.model).cuda()
-            else:
+        # Step1 - Model Config        
+        if (1):
+            self.use_cuda = True
+            cfgfile       = MODEL_CFG   
+            weightfile    = MODEL_WEIGHT
+            net_options   = parse_cfg(MODEL_CFG)[0]
+            self.model    = Darknet(cfgfile)
+            if self.use_cuda:
                 self.model = self.model.cuda()
-
-        params_dict = dict(self.model.named_parameters())
-        params = []
-        for key, value in params_dict.items():
-            if key.find('.bn') >= 0 or key.find('.bias') >= 0:
-                params += [{'params': [value], 'weight_decay': 0.0}]
-            else:
-                params += [{'params': [value], 'weight_decay': decay*self.batch_size}]
-        optimizer = optim.SGD(self.model.parameters(), 
-                                lr=learning_rate/self.batch_size, momentum=momentum,
-                                dampening=0, weight_decay=decay*self.batch_size)
+            self.model.load_weights(weightfile)
+            # model.print_network()
+            
+        # Step2 - Dataset
+        if (1):
+            self.trainlist = PASCAL_TRAIN
+            self.testlist  = PASCAL_VALID
+            backupdir      = TRAIN_LOGDIR
+            nsamples       = file_lines(self.trainlist)
+            num_workers   = 4
+            self.init_width        = self.model.width
+            self.init_height       = self.model.height
+            if not os.path.exists(backupdir):
+                print (' - backupdir :', backupdir)
+                os.mkdir(backupdir)
+            kwargs = {'num_workers': num_workers, 'pin_memory': True} if self.use_cuda else {}
         
-        print ('')
-        print (' -- init_epoch : ', init_epoch)
-        print (' -- max_epochs : ', max_epochs)
+        # Step3 - Training Params    
+        if (1):
+            self.batch_size = BATCH_SIZE #int(net_options['batch'])
+            max_batches     = int(net_options['max_batches'])
+            learning_rate   = float(net_options['learning_rate'])
+            momentum        = float(net_options['momentum'])
+            decay           = float(net_options['decay'])
+            steps           = [float(step) for step in net_options['steps'].split(',')]
+            scales          = [float(scale) for scale in net_options['scales'].split(',')]
+            max_epochs      = 135
+            seed            = int(time.time())
+            eps             = 1e-5
+            
+            torch.manual_seed(seed)
+            if self.use_cuda:
+                torch.cuda.manual_seed(seed)
+            region_loss     = self.model.loss
+            region_loss.seen  = self.model.seen
+            processed_batches = int(self.model.seen/self.batch_size)
+            init_epoch        = int(self.model.seen/nsamples)
+        
+        # Step3.2 - Optimizer - 
+        if (1):
+            # params_dict = dict(self.model.named_parameters())
+            # params = []
+            # for key, value in params_dict.items():
+            #     if key.find('.bn') >= 0 or key.find('.bias') >= 0:
+            #         params += [{'params': [value], 'weight_decay': 0.0}]
+            #     else:
+            #         params += [{'params': [value], 'weight_decay': decay*self.batch_size}]
+            # optimizer = optim.SGD(self.model.parameters(), 
+            #                         lr=learning_rate/self.batch_size, momentum=momentum,
+            #                         dampening=0, weight_decay=decay*self.batch_size)
+            LR = 0.00001 # 0.00025
+            optimizer = optim.SGD(self.model.parameters(), 
+                                    lr=LR, momentum=momentum,
+                                    dampening=0, weight_decay=decay*self.batch_size)
+
+        # Step4 - Model Saving
+        if (1): 
+            save_interval = 10  # epoches
+            dot_interval  = 70  # batches
+
+        # Step5 -  Test parameters
+        if (1):
+            conf_thresh   = 0.25
+            nms_thresh    = 0.4
+            iou_thresh    = 0.5
+
+        # Step 99 - Random Priting
+        if (1):
+            print ('')
+            print (' -- init_epoch : ', init_epoch)
+            print (' -- max_epochs : ', max_epochs)
 
         for epoch in range(init_epoch, max_epochs): 
             
-            print (' ---------------------------- EPOCH : ', epoch, ' ---------------------------------- ')
-            ## ----------------------- TRAIN ------------------------
-            # global processed_batches
-            t0 = time.time()
-            if ngpus > 1:
-                cur_model = self.model.module
-            else:
-                cur_model = self.model
-            
-            train_loader = torch.utils.data.DataLoader(
-                dataloader.VOCDatasetv2(self.trainlist, shape=(self.init_width, self.init_height),
-                            shuffle=True,
-                            transform=transforms.Compose([
-                                transforms.ToTensor(),
-                            ]),
-                            train=True,
-                            seen=cur_model.seen,
-                            batch_size=self.batch_size),
-                batch_size=self.batch_size, shuffle=False, **kwargs)               
+            if (1):
+                #lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
+                # lr = 0.00001
 
-            lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
+                if (1):
+                    train_loader = torch.utils.data.DataLoader(
+                        dataloader.VOCDatasetv2(PASCAL_TRAIN, shape=(self.init_width, self.init_height),
+                                    shuffle=True,
+                                    transform=transforms.Compose([
+                                        transforms.ToTensor(),
+                                    ]),
+                                    train=True,
+                                    seen=self.model.seen),
+                        batch_size=self.batch_size, shuffle=False, **kwargs)      
+                             
+            print (' ---------------------------- EPOCH : ', epoch, ' (LR : ',LR,') ---------------------------------- ')
+                
             self.model.train()
-            train_loss_total       = 0.0
             with tqdm.tqdm_notebook(total = len(train_loader)*self.batch_size) as pbar:
+                train_loss_total       = 0.0
                 for batch_idx, (data, target) in enumerate(train_loader):
-                    
                     if (1):
-                        if (batch_idx > 1):
-                            break
+                        if (DEBUG_EPOCHS > -1):
+                            if batch_idx > DEBUG_EPOCHS:
+                                break
 
                         pbar.update(self.batch_size)
                         if (batch_idx == 0):
@@ -153,9 +197,9 @@ class YOLOv2Train():
                             print ('  - [INFO] target (or Y) : ', target.shape, ' || type : ', target.dtype) # = torch.Size([1, 250]) torch.float64
                             print ('  - [INFO] Total train points : ', len(train_loader), ' || nsamples : ', nsamples)
                     
-                    if (1):
-                        self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
-                        processed_batches = processed_batches + 1
+                    # if (1):
+                        #self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
+                        #processed_batches = processed_batches + 1
                     
                     if (1):
                         if self.use_cuda:
@@ -163,42 +207,50 @@ class YOLOv2Train():
                             target = target.float() 
                             # target= target.cuda()
                         data, target = Variable(data), Variable(target)
-                    
-                    if (1):
-                        optimizer.zero_grad()
-                        output           = self.model(data)
-                        region_loss.seen = region_loss.seen + data.data.size(0)
-                        loss             = region_loss(output, target)
-                        train_loss_total += loss.data;
-                        loss.backward()
-                        optimizer.step()
-                        print (' - loss : ', loss, ' || loss.data : ', loss.data)
 
                     if (1):
-                        pass
-                        # print (' - region_loss.seen : ', region_loss.seen)
-                        # print (' - [DEBUG] data : ', data.shape, data.dtype)
-                        # print (' - [DEBUG] output : ', output.shape, output.dtype)
-                        # print (' - [DEBUG] target : ', target.shape, target.dtype)
-                        # print (' - [DEBUG] output : ',output)
-                        # print ('-----------------------------------')
-                        # print (' - [DEBUG] target : ',target)
+                        try:
+                            with torch.autograd.detect_anomaly():
+                                output           = self.model(data)
+                                if (output != output).any():
+                                    print ('  -- [DEBUG][train.py] We have some NaNs')
+                                    pdb.set_trace()
+                                # print ((output != output).any())
+                                region_loss.seen = region_loss.seen + data.data.size(0)
+                                train_loss       = region_loss(output, target)
+                                train_loss_total += train_loss.data
+                                    
+                                optimizer.zero_grad()
+                                train_loss.backward()
+                                optimizer.step()
+
+                                if verbose:
+                                    print (' - loss : ', train_loss)
+
+                            # for name, param in self.model.named_parameters():
+                            #     if param.requires_grad:
+                            #         print ('  -- [DEBUG] : ', name, '\t  - \t', round(param.grad.data.sum().item(),3), '   [',param.shape,']')
+                        except:
+                            traceback.print_exc()
+                            pdb.set_trace()
+
+                        # pdb.set_trace()
 
             if LOGGER != '':
                 train_loss_avg = train_loss_total / len(train_loader)
                 print ('   -- train_loss_total : ', train_loss_total, ' || train_loss_avg :', train_loss_avg)
                 LOGGER.save_value('Total Loss', 'Train Loss', epoch+1, train_loss_avg)
-            t1 = time.time()
+                train_loss_total       = 0.0
+
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
             # if (epoch+1) % save_interval == 0:
-            logging('save weights to %s/%06d.weights' % (backupdir, epoch+1))
-            cur_model.seen = (epoch + 1) * len(train_loader.dataset)
-            cur_model.save_weights('%s/%06d.weights' % (backupdir, epoch+1))
+            # logging('save weights to %s/%06d.weights' % (backupdir, epoch+1))
+            self.model.seen = (epoch + 1) * len(train_loader.dataset)
+            # self.model.save_weights('%s/%06d.weights' % (backupdir, epoch+1))
 
             ## ----------------------- TEST ------------------------
             # self.test(epoch)
-            print (' -- Loss : ', self.model.loss)
-            valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT
+            valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
                                         , LOGGER, epoch)
             valObj.predict(BATCH_SIZE)
@@ -218,3 +270,41 @@ class YOLOv2Train():
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr/batch_size
         return lr
+
+# if __name__ == "__main__":
+#     torch.cuda.empty_cache()
+    
+#     if (torch.cuda.is_available()):
+#         if (1):
+#             DIR_MAIN         = os.path.abspath('../')
+#             print (' - 1. DIR_MAIN :  ', DIR_MAIN)
+
+#         if (1):
+#             PASCAL_DIR   = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/')
+#             PASCAL_TRAIN = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/voc_train.txt')
+#             PASCAL_VALID = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/2007_test.txt')
+#             TRAIN_LOGDIR = os.path.join(DIR_MAIN, 'train_data')
+#             VAL_LOGDIR   = os.path.join(DIR_MAIN, 'eval_data')
+#             VAL_OUTPUTDIR_PKL = os.path.join(DIR_MAIN, 'eval_results')
+#             MODEL_CFG    = os.path.join(DIR_MAIN, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
+#             MODEL_WEIGHT = os.path.join(DIR_MAIN, 'data/weights/github_pjreddie/yolov2-voc.weights')
+#             print (' - 2. MODEL_WEIGHT :  ', MODEL_WEIGHT)
+
+#         if (1):
+#             VAL_PREFIX   = 'pretrained'
+#             BATCH_SIZE   = 1;
+#             print (' - 3. VAL_PREFIX : ', VAL_PREFIX)
+
+#         if (1):
+#             LOGGER = ''
+#             print (' - 4. Logger : ', LOGGER)
+
+
+#         if (1):
+#             trainObj = YOLOv2Train()
+#             trainObj.train(PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
+#                         , MODEL_CFG, MODEL_WEIGHT
+#                         , BATCH_SIZE
+#                         , LOGGER)
+#     else:
+#         print (' - GPU Issues!!')
