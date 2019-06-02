@@ -243,10 +243,11 @@ class YOLOv2Train():
                 train_loss_total       = 0.0
 
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
-            # if (epoch+1) % save_interval == 0:
-            # logging('save weights to %s/%06d.weights' % (backupdir, epoch+1))
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
-            # self.model.save_weights('%s/%06d.weights' % (backupdir, epoch+1))
+            # Save weights
+            if (epoch+1) % save_interval == 0:
+                logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
+                self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
 
             ## ----------------------- TEST ------------------------
             # self.test(epoch)
