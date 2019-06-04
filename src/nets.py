@@ -16,8 +16,8 @@ from torchvision import models
 import torch.nn.functional as F
 
 from pruning.weightPruning.layers import MaskedConv2d
-from pruning.weightPruning.methods import quick_filter_prune
-from pruning.weightPruning.utils import prune_rate
+from pruning.weightPruning.methods import quick_filter_prune, weight_prune
+from pruning.weightPruning.utils import prune_rate, are_masks_consistent
 
 from torch.autograd import Variable
 
@@ -1058,7 +1058,7 @@ class Darknet(nn.Module):
                     m[0].set_mask(masks[count])
                     count += 1
             except:
-                print(m)
+                pass
 
 
 def debug_weights(model):
@@ -1082,10 +1082,11 @@ if __name__ == '__main__':
     model = getYOLOv2(cfg_file, weights_file)
     if (0):
         for pruning_perc in [10.,30.,50.,70.,90.,99.]:
-            masks = quick_filter_prune(model, pruning_perc)
+            masks = weight_prune(model, pruning_perc)
             print("Num masks: ", len(masks))
             model.set_masks(masks)
             prune_rate(model)
-            model.save_weights('yolov2-voc-filter-prune-%s.weights' % pruning_perc)
+            print(are_masks_consistent(model, masks))
+            #model.save_weights('yolov2-voc-filter-prune-%s.weights' % pruning_perc)
 
     

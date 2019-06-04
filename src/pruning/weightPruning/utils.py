@@ -119,3 +119,15 @@ def arg_nonzero_min(a):
 
     return min_v, min_ix
     
+def are_masks_consistent(model, masks):
+    conv_params = [p for p in model.parameters() if len(p.data.size()) == 4]
+    inverted_masks = [abs(m - 1) for m in masks]
+
+    assert len(conv_params) == len(inverted_masks)
+
+    sum_non_zero = 0
+    for i in range(len(conv_params)):
+        vals = conv_params[i] * inverted_masks[i]
+        sum_non_zero += vals.sum((0,1,2,3)).item()
+
+    return sum_non_zero == 0
