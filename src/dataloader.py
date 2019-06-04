@@ -1,83 +1,95 @@
 import os
 import cv2
 import random
+import traceback
 import numpy as np
 import matplotlib.pyplot as plt
-
 from PIL import Image
+
+import pickle
+import xml.etree.ElementTree as ET
 
 import torch
 import torch.utils.data as data
+from torch.autograd import Variable
+
+from torchvision import transforms
 
 ## --------------------------------------- PASCAL VOC - v2 --------------------------------------- ##
 
 class VOCDatasetv2(data.Dataset):
 
-    def __init__(self, root, shape=None, shuffle=True, transform=None, target_transform=None, train=False, seen=0, batch_size=64, num_workers=4):
-       with open(root, 'r') as file:
-           self.lines = file.readlines()
+    def __init__(self, IMAGELIST_TXT, shape=None, shuffle=True, transform=None, target_transform=None, train=False, num_workers=1, seen=0, verbose=0):
+        with open(IMAGELIST_TXT, 'r') as file:
+            self.lines = file.readlines()
 
-       if shuffle:
-           random.shuffle(self.lines)
+        if shuffle:
+            random.shuffle(self.lines)
 
-       self.nSamples  = len(self.lines)
-       self.transform = transform
-       self.target_transform = target_transform
-       self.train = train
-       self.shape = shape
-       self.seen = seen
-       self.batch_size = batch_size
-       self.num_workers = num_workers
+        self.nSamples         = len(self.lines)
+        self.transform        = transform
+        self.target_transform = target_transform
+        self.train            = train
+        self.shape            = shape
+
+        self.seen             = seen
+        self.num_workers      = num_workers
+        self.verbose          = verbose
 
     def __len__(self):
         return self.nSamples
 
     def __getitem__(self, index):
-        assert index <= len(self), 'index range error'
+        assert index <= len(self), ' - [ERROR][dataloader.py] Index range error'
         imgpath = self.lines[index].rstrip()
 
-        if self.train and index % 64== 0:
-            if self.seen < 4000*64:
-               width = 13*32
-               self.shape = (width, width)
-            elif self.seen < 8000*64:
-               width = (random.randint(0,3) + 13)*32
-               self.shape = (width, width)
-            elif self.seen < 12000*64:
-               width = (random.randint(0,5) + 12)*32
-               self.shape = (width, width)
-            elif self.seen < 16000*64:
-               width = (random.randint(0,7) + 11)*32
-               self.shape = (width, width)
-            else: # self.seen < 20000*64:
-               width = (random.randint(0,9) + 10)*32
-               self.shape = (width, width)
+        if self.verbose:
+            print ('  -- [DEBUG][VOCDatasetv2] index : ', index)
+            print ('  -- [DEBUG][VOCDatasetv2] imgpath : ', imgpath)
+        
+        if (0): # different images sizes
+            if self.train and index % 64== 0:
+                if self.seen < 4000*64:
+                    width = 13*32
+                    self.shape = (width, width)
+                elif self.seen < 8000*64:
+                    width = (random.randint(0,3) + 13)*32
+                    self.shape = (width, width)
+                elif self.seen < 12000*64:
+                    width = (random.randint(0,5) + 12)*32
+                    self.shape = (width, width)
+                elif self.seen < 16000*64:
+                    width = (random.randint(0,7) + 11)*32
+                    self.shape = (width, width)
+                else: # self.seen < 20000*64:
+                    width = (random.randint(0,9) + 10)*32
+                    self.shape = (width, width)
 
         if self.train:
-            jitter = 0.2
-            hue = 0.1
+            jitter     = 0.2
+            hue        = 0.1
             saturation = 1.5 
-            exposure = 1.5
+            exposure   = 1.5
 
-            img, label = load_data_detection(imgpath, self.shape, jitter, hue, saturation, exposure)
-            label = torch.from_numpy(label)
+            img, label = getData(imgpath, self.shape, jitter, hue, saturation, exposure)
+            label      = torch.from_numpy(label)
+
         else:
             img = Image.open(imgpath).convert('RGB')
             if self.shape:
                 img = img.resize(self.shape)
     
             labpath = imgpath.replace('images', 'labels').replace('JPEGImages', 'labels').replace('.jpg', '.txt').replace('.png','.txt')
-            label = torch.zeros(50*5)
-            #if os.path.getsize(labpath):
-            #tmp = torch.from_numpy(np.loadtxt(labpath))
+            label   = torch.zeros(50*5)
+
             try:
                 tmp = torch.from_numpy(read_truths_args(labpath, 8.0/img.width).astype('float32'))
             except Exception:
+                traceback.print_exc()
                 tmp = torch.zeros(1,5)
-            #tmp = torch.from_numpy(read_truths(labpath))
+
             tmp = tmp.view(-1)
             tsz = tmp.numel()
-            #print('labpath = %s , tsz = %d' % (labpath, tsz))
             if tsz > 50*5:
                 label = tmp[0:50*5]
             elif tsz > 0:
@@ -90,8 +102,10 @@ class VOCDatasetv2(data.Dataset):
             label = self.target_transform(label)
 
         self.seen = self.seen + self.num_workers
-        return (img, label)
+        
+        return (img, label.float())
 
+# --------------- DATA AUGMENTATIONS --------------- #
 def scale_image_channel(im, c, v):
     cs = list(im.split())
     cs[c] = cs[c].point(lambda i: i * v)
@@ -163,36 +177,87 @@ def data_augmentation(img, shape, jitter, hue, saturation, exposure):
     
     return img, flip, dx,dy,sx,sy 
 
+# --------------- DATA AND LABELS --------------- #
+
+def read_truths(lab_path):
+    if not os.path.exists(lab_path):
+        return np.array([])
+
+    if os.path.getsize(lab_path):
+        truths = np.loadtxt(lab_path)
+        truths = truths.reshape(int(truths.size/5), 5) # to avoid single truth problem
+        return truths
+    else:
+        return np.array([])
+
+def read_truths_args(lab_path, min_box_scale):
+    truths = read_truths(lab_path)
+    new_truths = []
+    for i in range(truths.shape[0]):
+        if truths[i][3] < min_box_scale:
+            continue
+        new_truths.append([truths[i][0], truths[i][1], truths[i][2], truths[i][3], truths[i][4]])
+    return np.array(new_truths)
+
+# Unused
+def getLabels(labpath):
+    max_boxes = 50
+    label     = np.zeros((max_boxes,5))
+    cc        = 0
+
+    if os.path.getsize(labpath):
+        bs = np.loadtxt(labpath)  # the values here are [norm_centre_x, norm_centre_y, norm_width, norm_height] wrt image-origin (top-left)
+        if bs is None:
+            return label
+        bs = np.reshape(bs, (-1, 5))
+
+        for i in range(bs.shape[0]):
+            label[cc] = bs[i]
+            cc        += 1
+            if cc >= 50:
+                break
+        
+        label = np.reshape(label, (-1))
+    
+    return label
+
 def fill_truth_detection(labpath, w, h, flip, dx, dy, sx, sy):
     max_boxes = 50
     label = np.zeros((max_boxes,5))
     if os.path.getsize(labpath):
-        bs = np.loadtxt(labpath)
+        bs = np.loadtxt(labpath)   # the values here are [norm_centre_x, norm_centre_y, norm_width, norm_height] wrt image-origin (top-left)
         if bs is None:
             return label
         bs = np.reshape(bs, (-1, 5))
         cc = 0
+
         for i in range(bs.shape[0]):
-            x1 = bs[i][1] - bs[i][3]/2
-            y1 = bs[i][2] - bs[i][4]/2
-            x2 = bs[i][1] + bs[i][3]/2
-            y2 = bs[i][2] + bs[i][4]/2
+            if (1):
+                # xmin, ymin
+                x1 = bs[i][1] - bs[i][3]/2
+                y1 = bs[i][2] - bs[i][4]/2
+                # xmax, ymax
+                x2 = bs[i][1] + bs[i][3]/2
+                y2 = bs[i][2] + bs[i][4]/2
             
-            x1 = min(0.999, max(0, x1 * sx - dx)) 
-            y1 = min(0.999, max(0, y1 * sy - dy)) 
-            x2 = min(0.999, max(0, x2 * sx - dx))
-            y2 = min(0.999, max(0, y2 * sy - dy))
+            if (1):
+                x1 = min(0.999, max(0, x1 * sx - dx)) 
+                y1 = min(0.999, max(0, y1 * sy - dy)) 
+                x2 = min(0.999, max(0, x2 * sx - dx))
+                y2 = min(0.999, max(0, y2 * sy - dy))
             
-            bs[i][1] = (x1 + x2)/2
-            bs[i][2] = (y1 + y2)/2
-            bs[i][3] = (x2 - x1)
-            bs[i][4] = (y2 - y1)
+            if (1):
+                bs[i][1] = (x1 + x2)/2 # x_centre
+                bs[i][2] = (y1 + y2)/2 # y_centre
+                bs[i][3] = (x2 - x1)   # width
+                bs[i][4] = (y2 - y1)   # height
 
             if flip:
                 bs[i][1] =  0.999 - bs[i][1] 
             
             if bs[i][3] < 0.001 or bs[i][4] < 0.001:
                 continue
+
             label[cc] = bs[i]
             cc += 1
             if cc >= 50:
@@ -201,15 +266,77 @@ def fill_truth_detection(labpath, w, h, flip, dx, dy, sx, sy):
     label = np.reshape(label, (-1))
     return label
 
-def load_data_detection(imgpath, shape, jitter, hue, saturation, exposure):
+def getData(imgpath, shape, jitter, hue, saturation, exposure):
     labpath = imgpath.replace('images', 'labels').replace('JPEGImages', 'labels').replace('.jpg', '.txt').replace('.png','.txt')
 
     ## data augmentation
-    img = Image.open(imgpath).convert('RGB')
+    img                  = Image.open(imgpath).convert('RGB')
     img,flip,dx,dy,sx,sy = data_augmentation(img, shape, jitter, hue, saturation, exposure)
-    label = fill_truth_detection(labpath, img.width, img.height, flip, dx, dy, 1./sx, 1./sy)
+    label                = fill_truth_detection(labpath, img.width, img.height, flip, dx, dy, 1./sx, 1./sy)
+
     return img,label
 
+
+## --------------------------------------- PASCAL VOC - v2 (voc_label.py) --------------------------------------- ##
+
+# Step3 : converts box corners to centre and width,height
+def convert(size, box):
+    dw = 1./size[0]
+    dh = 1./size[1]
+    # centre of BBox
+    x = (box[0] + box[1])/2.0
+    y = (box[2] + box[3])/2.0
+    # Dimensions of BBox
+    w = box[1] - box[0]
+    h = box[3] - box[2]
+
+    # Normalization
+    x = x*dw
+    w = w*dw
+    y = y*dh
+    h = h*dh
+
+    return (x,y,w,h)
+
+# Step2 : reads .xml () and converts to .txt
+def convert_annotation(DATA_DIR, year, image_id):
+    classes  = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car", "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike", "person", "pottedplant", "sheep", "sofa", "train", "tvmonitor"]
+
+    in_file  = open(os.path.join(DATA_DIR, 'VOCdevkit/VOC%s/Annotations/%s.xml'%(year, image_id)))
+    out_file = open(os.path.join(DATA_DIR,'VOCdevkit/VOC%s/labels/%s.txt'%(year, image_id)), 'w')
+    tree     = ET.parse(in_file)
+    root     = tree.getroot()
+    size     = root.find('size')
+    w        = int(size.find('width').text)
+    h        = int(size.find('height').text)
+
+    for obj in root.iter('object'):
+        difficult = obj.find('difficult').text
+        cls       = obj.find('name').text
+        if cls not in classes or int(difficult) == 1:
+            continue
+        cls_id = classes.index(cls)
+        xmlbox = obj.find('bndbox')
+        b      = (float(xmlbox.find('xmin').text), float(xmlbox.find('xmax').text), float(xmlbox.find('ymin').text), float(xmlbox.find('ymax').text))
+        bb     = convert((w,h), b)
+        out_file.write(str(cls_id) + " " + " ".join([str(a) for a in bb]) + '\n')
+
+# Step1 : entry-point
+def setup_VOC(DATA_DIR):
+
+    sets    = [('2012', 'train'), ('2012', 'val'), ('2007', 'train'), ('2007', 'val'), ('2007', 'test')]
+
+    for year, image_set in sets:
+        print (' - year : ', year, ' || image_set : ', image_set)
+        if not os.path.exists(os.path.join(DATA_DIR, 'VOCdevkit/VOC%s/labels/'%(year))):
+            os.makedirs(os.path.join(DATA_DIR, 'VOCdevkit/VOC%s/labels/'%(year)))
+
+        image_ids = open(os.path.join(DATA_DIR, 'VOCdevkit/VOC%s/ImageSets/Main/%s.txt'%(year, image_set))).read().strip().split()
+        list_file = open(os.path.join(DATA_DIR, 'VOCdevkit/%s_%s.txt'%(year, image_set)), 'w')
+        for image_id in image_ids:
+            list_file.write('%s/VOCdevkit/VOC%s/JPEGImages/%s.jpg\n'%(DATA_DIR, year, image_id))
+            convert_annotation(DATA_DIR, year, image_id)
+        list_file.close()
 
 ## --------------------------------------- PASCAL VOC - v1 --------------------------------------- ##
 
@@ -488,29 +615,68 @@ class YoloDataset(data.Dataset):
         pass
     
 
-if __name__ == "__main__":
-    pass
-    # dir_annotations  = 'yolo/data/VOCdevkit_trainval/VOC2007'
-    # file_annotations = 'yolo/data/VOCdevkit_trainval/VOC2007/anno_trainval.txt'
-    # image_size       = 448
-    # grid_num         = 14
-    # flag_augm        = 0
-    # train            = True
-    
-    # YoloDatasetTrain = YoloDataset(dir_annotations, file_annotations
-    #                             , train
-    #                             , image_size, grid_num
-    #                             , flag_augm
-    #                             , transform = [transforms.ToTensor()] )
-    
-    # print (' - Total Images: ', len(YoloDatasetTrain))
-    # if (1):
-    #     idx = np.random.randint(len(YoloDatasetTrain))
-    #     X,Y = YoloDatasetTrain[idx]
-    #     YoloDatasetTrain.display(X)
+# if __name__ == "__main__":
+#     if (0):
+#         pass
+#         # dir_annotations  = 'yolo/data/VOCdevkit_trainval/VOC2007'
+#         # file_annotations = 'yolo/data/VOCdevkit_trainval/VOC2007/anno_trainval.txt'
+#         # image_size       = 448
+#         # grid_num         = 14
+#         # flag_augm        = 0
+#         # train            = True
         
-    # DataLoaderTrain = DataLoader(YoloDatasetTrain, batch_size=1,shuffle=False,num_workers=0)
-    # train_iter = iter(DataLoaderTrain)
-    # for i in range(2):
-    #     img,target = next(train_iter)
-        # print(img,target) 
+#         # YoloDatasetTrain = YoloDataset(dir_annotations, file_annotations
+#         #                             , train
+#         #                             , image_size, grid_num
+#         #                             , flag_augm
+#         #                             , transform = [transforms.ToTensor()] )
+        
+#         # print (' - Total Images: ', len(YoloDatasetTrain))
+#         # if (1):
+#         #     idx = np.random.randint(len(YoloDatasetTrain))
+#         #     X,Y = YoloDatasetTrain[idx]
+#         #     YoloDatasetTrain.display(X)
+            
+#         # DataLoaderTrain = DataLoader(YoloDatasetTrain, batch_size=1,shuffle=False,num_workers=0)
+#         # train_iter = iter(DataLoaderTrain)
+#         # for i in range(2):
+#         #     img,target = next(train_iter)
+#             # print(img,target) 
+#     else:
+#         TRAINLIST  = '../data/dataset/VOCdevkit/voc_train.txt'
+#         TESTLIST   = '../data/dataset/VOCdevkit/2007_test.txt'
+#         WIDTH      = 416
+#         HEIGHT     = 416
+#         BATCH_SIZE = 1 
+#         if (0):
+#             dataset_pascal = VOCDatasetv2(TRAINLIST, shape=(WIDTH, HEIGHT),
+#                                 shuffle=False,
+#                                 transform=transforms.Compose([
+#                                     transforms.ToTensor(),
+#                                 ]),
+#                                 train=True,
+#                                 seen=0, verbose=1)
+#         else:
+#             dataset_pascal = VOCDatasetv2(TESTLIST, shape=(WIDTH, HEIGHT),
+#                                 shuffle=False,
+#                                 transform=transforms.Compose([
+#                                     transforms.ToTensor(),
+#                                 ]),
+#                                 train=False,
+#                                 seen=0, verbose=1)
+        
+#         rand_idx = np.random.randint(len(dataset_pascal))
+#         print (' - rand_idx : ', rand_idx)
+#         X,Y = dataset_pascal[rand_idx]
+#         print (' - X : ', X.shape, ' || dtype : ', X.dtype)
+#         print (' - Y : ', Y.shape, ' || dtype : ', Y.dtype)
+#         print (' - Y : ', Y)
+
+#         dataset_pascal_loader = torch.utils.data.DataLoader(dataset_pascal, batch_size=BATCH_SIZE, shuffle=False)
+
+#         for batch_idx, (data, target) in enumerate(dataset_pascal_loader):
+#             if (batch_idx > 2):
+#                 break
+#             data, target = Variable(data), Variable(target)
+#             print (' - [DEBUG] target : ', target)     
+#             print (' - [DEBUG] target[target != 0.0]) : ', target[target != 0.0])
