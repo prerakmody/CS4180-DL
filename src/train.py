@@ -190,9 +190,6 @@ class YOLOv2Train():
                 train_loss_total       = 0.0
                 for batch_idx, (data, target) in enumerate(train_loader):
                     if (1):
-                        if (DEBUG_EPOCHS > -1):
-                            if batch_idx > DEBUG_EPOCHS:
-                                break
 
                         pbar.update(self.batch_size)
                         if (batch_idx == 0):
