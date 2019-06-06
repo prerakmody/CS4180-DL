@@ -79,9 +79,8 @@ class YOLOv2Train():
 
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
-                    , BATCH_SIZE
-                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0
-                    , SAVE_INTERNAL):
+                    , BATCH_SIZE, SAVE_INTERNAL
+                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
 
         # Step1 - Model Config        
         if (1):
