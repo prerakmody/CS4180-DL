@@ -15,9 +15,9 @@ import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
 
-from pruning.weightPruning.layers import MaskedConv2d
-from pruning.weightPruning.methods import quick_filter_prune, weight_prune
-from pruning.weightPruning.utils import prune_rate, are_masks_consistent
+from src.pruning.weightPruning.layers import MaskedConv2d
+from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
+from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
 
 from torch.autograd import Variable
 
