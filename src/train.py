@@ -157,6 +157,9 @@ class YOLOv2Train():
             nms_thresh    = 0.4
             iou_thresh    = 0.5
 
+        if DEBUG_EPOCHS > -1:
+            max_epochs = DEBUG_EPOCHS
+
         # Step 99 - Random Priting
         if (1):
             print ('')
