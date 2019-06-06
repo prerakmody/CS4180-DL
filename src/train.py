@@ -80,7 +80,8 @@ class YOLOv2Train():
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
                     , BATCH_SIZE
-                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
+                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0
+                    , SAVE_INTERNAL):
 
         # Step1 - Model Config        
         if (1):
@@ -148,7 +149,7 @@ class YOLOv2Train():
 
         # Step4 - Model Saving
         if (1): 
-            save_interval = 10  # epoches
+            SAVE_INTERNAL = 10  # epoches
             dot_interval  = 70  # batches
 
         # Step5 -  Test parameters
@@ -245,7 +246,7 @@ class YOLOv2Train():
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
             # Save weights
-            if (epoch+1) % save_interval == 0:
+            if (epoch+1) % SAVE_INTERNAL == 0:
                 logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
                 self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
 
