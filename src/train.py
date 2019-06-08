@@ -80,7 +80,7 @@ class YOLOv2Train():
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
                     , BATCH_SIZE, SAVE_INTERNAL
-                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
+                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0,pruning_perc=0.,pruning_method="weight"):
 
         # Step1 - Model Config        
         if (1):
@@ -157,8 +157,6 @@ class YOLOv2Train():
             nms_thresh    = 0.4
             iou_thresh    = 0.5
 
-        if DEBUG_EPOCHS > -1:
-            max_epochs = DEBUG_EPOCHS
 
         # Step 99 - Random Priting
         if (1):
@@ -166,7 +164,16 @@ class YOLOv2Train():
             print (' -- init_epoch : ', init_epoch)
             print (' -- max_epochs : ', max_epochs)
 
-        for epoch in range(init_epoch, max_epochs): 
+        if pruning_perc > 0:
+            if pruning_method == "filter":
+                masks = quick_filter_prune(self.model, pruning_perc)
+            else:
+                masks = weight_prune(self.model, pruning_perc)
+            self.model.set_masks(masks)
+            p_rate = prune_rate(self.model,True)
+            print(' %s=pruned: %s' % (pruning_method, p_rate))
+
+        for epoch in range(init_epoch, max_epochs):
             
             if (1):
                 #lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
@@ -184,12 +191,15 @@ class YOLOv2Train():
                         batch_size=self.batch_size, shuffle=False, **kwargs)      
                              
             print (' ---------------------------- EPOCH : ', epoch, ' (LR : ',LR,') ---------------------------------- ')
-                
+
             self.model.train()
             with tqdm.tqdm_notebook(total = len(train_loader)*self.batch_size) as pbar:
                 train_loss_total       = 0.0
                 for batch_idx, (data, target) in enumerate(train_loader):
                     if (1):
+                        if (DEBUG_EPOCHS > -1):
+                            if batch_idx > DEBUG_EPOCHS:
+                                break
 
                         pbar.update(self.batch_size)
                         if (batch_idx == 0):
@@ -234,7 +244,12 @@ class YOLOv2Train():
                             traceback.print_exc()
                             pdb.set_trace()
 
-                        # pdb.set_trace()
+            if pruning_perc > 0:
+                print(' pruned: %s' % prune_rate(self.model,False))
+                print(' pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
+                if (epoch + 1) % 5 == 0:
+                    logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (pruning_method, backupdir, pruning_perc , epoch+1))
+                    self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (pruning_method, backupdir, pruning_perc, epoch+1))
 
             if LOGGER != '':
                 train_loss_avg = train_loss_total / len(train_loader)
@@ -255,6 +270,8 @@ class YOLOv2Train():
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
                                         , LOGGER, epoch)
             valObj.predict(BATCH_SIZE)
+        logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (pruning_method, backupdir, pruning_perc , epoch+1))
+        self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (pruning_method, backupdir, pruning_perc, epoch+1))
         # end for epoch
 
     def adjust_learning_rate(self, optimizer, batch, learning_rate, steps, scales, batch_size):
