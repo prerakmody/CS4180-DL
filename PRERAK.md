@@ -100,7 +100,7 @@
 
 
 ## Next Steps 
-    - Prune the network, see if the pruned weights remain unchanged during retraining (Rukai and Tomas) by 8th of June
-    - Share configurations with everyone and ask them to report the results (mAP) by 9th of June 
+    - Share configurations with everyone and ask them to report the results (mAP) by 9th of June
+    - Visualisation
     - Keep up with the report (Anish and Soroosh)
     - Poster presentation
