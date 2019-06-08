@@ -101,6 +101,7 @@
 
 ## Next Steps 
     - Share configurations with everyone and ask them to report the results (mAP) by 9th of June
-    - Visualisation
+    - Visualisation 1, bounding box of 5 images: before pruning vs after retraining
+    - Visualisation 2, 3D weights plots: before pruning vs after retraining
     - Keep up with the report (Anish and Soroosh)
     - Poster presentation
