@@ -248,8 +248,8 @@ class YOLOv2Train():
                 print(' pruned: %s' % prune_rate(self.model,False))
                 print(' pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
                 if (epoch + 1) % 5 == 0:
-                    logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (pruning_method, backupdir, pruning_perc , epoch+1))
-                    self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (pruning_method, backupdir, pruning_perc, epoch+1))
+                    logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+                    self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
 
             if LOGGER != '':
                 train_loss_avg = train_loss_total / len(train_loader)
@@ -259,10 +259,10 @@ class YOLOv2Train():
 
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
-            # Save weights
-            if (epoch+1) % SAVE_INTERNAL == 0:
-                logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
-                self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
+            # # Save weights
+            # if (epoch+1) % SAVE_INTERNAL == 0:
+            #     logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
+            #     self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
 
             ## ----------------------- TEST ------------------------
             # self.test(epoch)
@@ -270,8 +270,8 @@ class YOLOv2Train():
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
                                         , LOGGER, epoch)
             valObj.predict(BATCH_SIZE)
-        logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (pruning_method, backupdir, pruning_perc , epoch+1))
-        self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (pruning_method, backupdir, pruning_perc, epoch+1))
+        logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+        self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
         # end for epoch
 
     def adjust_learning_rate(self, optimizer, batch, learning_rate, steps, scales, batch_size):
