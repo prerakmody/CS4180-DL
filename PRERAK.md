@@ -102,3 +102,23 @@
 ## Next Steps
     - Push code to github and make it runnable
     - Share configurations with everyone and ask them to report the results
+
+## Check if training with original weights is running
+    - Things Changed
+        - Loss Function
+            - []
+        - Training Params
+            - [Changed] LR = 0.00001 (from 0.001)
+                - LR = 0.00001 [No affect (mAP plateaus at ~0.68)]
+            - [Not Changed] momentum = 0.9
+            - [Changed] Batch = 32 (from 64)
+                - No affect (mAP plateaus at ~0.68)
+        - Validation Params
+            - [Not Changed] CONF_THRESH=0.005
+            - [Not Changed] NMS_THRESH=0.45
+    
+    - Configs Tried
+        - Config1 : Batch=32, LR=0.00001 (mAP ~ 0.68 for 40 epochs)
+        - Config2 : Batch=64, LR=0.00001 (mAP ~ 0.68 for 40 epochs)
+        - Config3 : Batch=32, LR=0.0001 (mAP ~ ?)
+        - Config4 : Batch=64, LR=0.0001 (mAP ~ ?)

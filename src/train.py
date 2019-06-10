@@ -79,7 +79,7 @@ class YOLOv2Train():
 
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
-                    , BATCH_SIZE
+                    , BATCH_SIZE, LEARNING_RATE,
                     , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
 
         # Step1 - Model Config        
@@ -111,20 +111,23 @@ class YOLOv2Train():
         # Step3 - Training Params    
         if (1):
             self.batch_size = BATCH_SIZE #int(net_options['batch'])
-            max_batches     = int(net_options['max_batches'])
-            learning_rate   = float(net_options['learning_rate'])
+            max_epochs      = 135
+            LR              = LEARNING_RATE #0.00001 # 0.00025
+
             momentum        = float(net_options['momentum'])
             decay           = float(net_options['decay'])
+            
+            max_batches     = int(net_options['max_batches'])
             steps           = [float(step) for step in net_options['steps'].split(',')]
             scales          = [float(scale) for scale in net_options['scales'].split(',')]
-            max_epochs      = 135
-            seed            = int(time.time())
+            seed            = 42  #int(time.time())
             eps             = 1e-5
             
             torch.manual_seed(seed)
             if self.use_cuda:
                 torch.cuda.manual_seed(seed)
-            region_loss     = self.model.loss
+            
+            region_loss       = self.model.loss
             region_loss.seen  = self.model.seen
             processed_batches = int(self.model.seen/self.batch_size)
             init_epoch        = int(self.model.seen/nsamples)
@@ -141,7 +144,7 @@ class YOLOv2Train():
             # optimizer = optim.SGD(self.model.parameters(), 
             #                         lr=learning_rate/self.batch_size, momentum=momentum,
             #                         dampening=0, weight_decay=decay*self.batch_size)
-            LR = 0.00001 # 0.00025
+            
             optimizer = optim.SGD(self.model.parameters(), 
                                     lr=LR, momentum=momentum,
                                     dampening=0, weight_decay=decay*self.batch_size)
@@ -153,11 +156,11 @@ class YOLOv2Train():
 
         # Step5 -  Test parameters
         if (1):
-            conf_thresh   = 0.25
-            nms_thresh    = 0.4
-            iou_thresh    = 0.5
+            conf_thresh   = 0.25 # [currently default to 0.05]
+            nms_thresh    = 0.4  # [currently default to 0.45]
+            iou_thresh    = 0.5  # [currently default to 0.5]
 
-        # Step 99 - Random Priting
+        # Step 99 - Random Printing
         if (1):
             print ('')
             print (' -- init_epoch : ', init_epoch)

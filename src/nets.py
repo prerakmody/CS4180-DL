@@ -268,6 +268,22 @@ def load_conv_bn(file, conv_model, bn_model):
         load_param(file, bn_model.running_mean)
         load_param(file, bn_model.running_var)
         load_param(file, conv_model.weight)
+        # pdb.set_trace()
+        """
+            - Eg:
+                - In_Filters = 3, Out_Filters = 32, Size = (3,3)
+                - conv_model = Conv2d(3, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+                    - conv_model.weight.shape = torch.Size([32, 3, 3, 3])
+                    - 
+                - bn_model   = BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True
+                    - bn_model.bias.shape   = torch.Size([32])
+                    - bn_model.weight.shape = torch.Size([32])
+                    - bn_model.running_mean.shape = torch.Size([32])
+                    - bn_model.running_var.shape  = torch.Size([32])
+            - Notes
+                - Theory : https://en.wikipedia.org/wiki/Batch_normalization
+                - Code   : https://pytorch.org/docs/stable/nn.html#batchnorm2d (y = [(x-mean) / sqrt(sigma + eps)] * weight + bias) 
+        """
     except:
         print ('  -- [Error] : load_conv_bn()',)
         pdb.set_trace()
@@ -457,6 +473,7 @@ class RegionLoss(nn.Module):
         References for Loss
             - [this]     https://github.com/marvis/pytorch-yolo2/blob/master/region_loss.py
             - [similiar] https://github.com/experiencor/keras-yolo2/blob/master/frontend.py
+            - [similiar] https://github.com/leeyoshinari/YOLO_v2/blob/master/yolo/yolo_v2.py
         """
         # print ('  -- [DEBUG][RegionLoss] self.num_anchors : ', self.num_anchors)
 
@@ -793,6 +810,7 @@ class Darknet(nn.Module):
                 
                 if batch_normalize:
                     model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    # https://pytorch.org/docs/stable/nn.html#batchnorm2d
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                     #model.add_module('bn{0}'.format(conv_id), BN2d(filters))
                 else:
@@ -1044,8 +1062,6 @@ class Darknet(nn.Module):
                 print('unknown type %s' % (block['type']))
         fp.close()
 
-
-
 def debug_weights(model):
     for name, param in model.named_parameters():
         if param.requires_grad:
@@ -1057,3 +1073,9 @@ def getYOLOv2(cfgfile, weightfile):
     if USE_GPU:
         model.cuda()
     return model
+
+if __name__ == "__main__":
+    DIR_MAIN      = os.path.abspath('../../repo1')
+    MODEL_CFG     = os.path.join(DIR_MAIN, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
+    MODEL_WEIGHTS = os.path.join(DIR_MAIN, 'data/weights/github_pjreddie/yolov2-voc.weights')
+    model = getYOLOv2(MODEL_CFG, MODEL_WEIGHTS)
