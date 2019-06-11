@@ -1,6 +1,7 @@
 data/*
+eval_data/
 
-
-*/.ipynb_checkpoints/*
+*.zip
+.ipynb_checkpoints
 */__pycache__/*
 *.pyc
