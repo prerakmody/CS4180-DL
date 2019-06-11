@@ -79,7 +79,7 @@ class YOLOv2Train():
 
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
-                    , BATCH_SIZE, LEARNING_RATE,
+                    , BATCH_SIZE, LEARNING_RATES, MAX_EPOCHS
                     , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
 
         # Step1 - Model Config        
@@ -110,18 +110,19 @@ class YOLOv2Train():
         
         # Step3 - Training Params    
         if (1):
-            self.batch_size = BATCH_SIZE #int(net_options['batch'])
-            max_epochs      = 135
-            LR              = LEARNING_RATE #0.00001 # 0.00025
+            self.batch_size  = BATCH_SIZE #int(net_options['batch'])
+            max_epochs       = MAX_EPOCHS
+            LRs              = LEARNING_RATES  #LR [0.00001, 0.0001] # 0.00025
 
             momentum        = float(net_options['momentum'])
             decay           = float(net_options['decay'])
             
-            max_batches     = int(net_options['max_batches'])
-            steps           = [float(step) for step in net_options['steps'].split(',')]
-            scales          = [float(scale) for scale in net_options['scales'].split(',')]
+            # max_batches     = MAX_BATCHES
+            # steps           = [float(step) for step in net_options['steps'].split(',')]
+            # scales          = [float(scale) for scale in net_options['scales'].split(',')]
+            # eps             = 1e-5
             seed            = 42  #int(time.time())
-            eps             = 1e-5
+            
             
             torch.manual_seed(seed)
             if self.use_cuda:
@@ -146,7 +147,7 @@ class YOLOv2Train():
             #                         dampening=0, weight_decay=decay*self.batch_size)
             
             optimizer = optim.SGD(self.model.parameters(), 
-                                    lr=LR, momentum=momentum,
+                                    lr=LRs[0], momentum=momentum,
                                     dampening=0, weight_decay=decay*self.batch_size)
 
         # Step4 - Model Saving
@@ -169,21 +170,26 @@ class YOLOv2Train():
         for epoch in range(init_epoch, max_epochs): 
             
             if (1):
+                if epoch > 0:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = LRs[epoch]
+                # LR = 0.00001
                 #lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
                 # lr = 0.00001
 
-                if (1):
-                    train_loader = torch.utils.data.DataLoader(
-                        dataloader.VOCDatasetv2(PASCAL_TRAIN, shape=(self.init_width, self.init_height),
-                                    shuffle=True,
-                                    transform=transforms.Compose([
-                                        transforms.ToTensor(),
-                                    ]),
-                                    train=True,
-                                    seen=self.model.seen),
-                        batch_size=self.batch_size, shuffle=False, **kwargs)      
-                             
-            print (' ---------------------------- EPOCH : ', epoch, ' (LR : ',LR,') ---------------------------------- ')
+            if (1):
+                train_loader = torch.utils.data.DataLoader(
+                    dataloader.VOCDatasetv2(PASCAL_TRAIN, shape=(self.init_width, self.init_height),
+                                shuffle=True,
+                                transform=transforms.Compose([
+                                    transforms.ToTensor(),
+                                ]),
+                                train=True,
+                                seen=self.model.seen),
+                    batch_size=self.batch_size, shuffle=False, **kwargs)      
+
+
+            print (' ---------------------------- EPOCH : ', epoch, ' (LR : ',LRs[epoch],') ---------------------------------- ')
                 
             self.model.train()
             with tqdm.tqdm_notebook(total = len(train_loader)*self.batch_size) as pbar:
@@ -243,6 +249,7 @@ class YOLOv2Train():
                 train_loss_avg = train_loss_total / len(train_loader)
                 print ('   -- train_loss_total : ', train_loss_total, ' || train_loss_avg :', train_loss_avg)
                 LOGGER.save_value('Total Loss', 'Train Loss', epoch+1, train_loss_avg)
+                LOGGER.save_value('Learning Rate', 'Learning Rate', epoch+1, LRs[epoch])
                 train_loss_total       = 0.0
 
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
