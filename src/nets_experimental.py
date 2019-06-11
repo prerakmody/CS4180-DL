@@ -1,3 +1,4 @@
+import cv2
 import os
 import sys
 import math
@@ -10,6 +11,10 @@ import torch.utils.model_zoo as model_zoo
 import torch.nn.functional as F
 
 from torchsummary import summary
+
+from pruning.weightPruning.layers import MaskedConv2d
+from pruning.weightPruning.methods import weight_prune
+from pruning.weightPruning.utils import prune_rate
 
 def model_parse_cfg(cfgfile, verbose=0):
     if verbose:
@@ -211,10 +216,10 @@ def model_create(blocks, name):
                 model           = nn.Sequential()
                 
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                 else:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
                 elif activation == 'relu':
@@ -266,10 +271,10 @@ def model_create(blocks, name):
                 model           = nn.Sequential()
 
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
                 else:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
                 elif activation == 'relu':
@@ -684,10 +689,21 @@ class YOLOv2(nn.Module):
 
         return x
 
+    def set_masks(self, masks):
+        count = 0
+        for m in self.blocks_nnmodules:
+            try:
+                if m[0].name == 'MaskedConv2d':
+                    m[0].set_mask(masks[count])
+                    count += 1
+            except:
+                print(m)
+
 
 if __name__ == "__main__":
     if 1:
-        cfg_file = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov2-voc.cfg'
+        cfg_file = 'yolov2-voc.cfg'
+        weights_file = 'yolov2-voc.weights'
         ip       = torch.rand((1,3,416,416))
     else:
         cfg_file     = '/home/strider/Work/Netherlands/TUDelft/1_Courses/Sem2/DeepLearning/Project/repo1/data/cfg/github_pjreddie/yolov1.cfg'
@@ -695,6 +711,22 @@ if __name__ == "__main__":
         ip           = torch.rand((1,3,448,448))
 
     TORCH_DEVICE = "cpu" # ["cpu", "cuda"]
+    model = YOLOv2(cfg_file, weights_file).to(TORCH_DEVICE)
+
+
+    params = [p for p in model.parameters()]
+
+    pruning_perc = 90.
+    masks = weight_prune(model, pruning_perc)
+
+    #set_trace()
+    model.set_masks(masks)
+
+    prune_rate(model)
+    # model.load_weights(weights_file)
+    # op    = model(torch.rand((1,3,448,448)).to(TORCH_DEVICE))
+    # print (' - op : ', op.shape)
+    # summary(model, input_size=(3, 448, 448))
     model        = YOLOv2(cfg_file, 1).to(TORCH_DEVICE)
     op           = model(ip.to(TORCH_DEVICE))
     print (' - op : ', op.shape)

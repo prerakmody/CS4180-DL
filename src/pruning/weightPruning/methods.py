@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from weightPruning.utils import prune_rate, arg_nonzero_min
+from src.pruning.weightPruning.utils import prune_rate, arg_nonzero_min
 
 
 def weight_prune(model, pruning_perc):
@@ -23,6 +23,58 @@ def weight_prune(model, pruning_perc):
         if len(p.data.size()) != 1:
             pruned_inds = p.data.abs() > threshold
             masks.append(pruned_inds.float())
+    return masks
+
+def quick_filter_prune(model, pruning_perc):
+    '''
+    Prune pruning_perc% filters globally
+    '''
+    masks = []
+
+    values = []
+    for p in model.parameters():
+
+        if len(p.data.size()) == 4: # nasty way of selecting conv layer
+            p_np = p.data.cpu().numpy()
+
+            masks.append(np.ones(p_np.shape).astype('float32'))                           
+
+            # find the scaled l2 norm for each filter this layer
+            value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
+                .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+            # normalization (important)
+            value_this_layer = value_this_layer / \
+                np.sqrt(np.square(value_this_layer).sum())
+            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+            max_value = np.max(value_this_layer)
+
+            value_this_layer /= max_value
+
+            values = np.concatenate((values, value_this_layer))
+
+    threshold = np.percentile(values, pruning_perc)
+
+    ind = 0
+    for p in model.parameters():
+
+        if len(p.data.size()) == 4: # nasty way of selecting conv layer
+            p_np = p.data.cpu().numpy()
+
+            # find the scaled l2 norm for each filter this layer
+            value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
+                .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+            # normalization (important)
+            value_this_layer = value_this_layer / \
+                np.sqrt(np.square(value_this_layer).sum())
+            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+            max_value = np.max(value_this_layer)
+
+            value_this_layer /= max_value
+
+            masks[ind][value_this_layer < threshold] = 0.
+            ind += 1
+      
+    masks = [torch.from_numpy(mask) for mask in masks]
     return masks
 
 

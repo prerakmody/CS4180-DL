@@ -1,4 +1,5 @@
 #encoding:utf-8
+import cv2
 import os
 import sys
 import pdb
@@ -13,12 +14,18 @@ import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
+
+
+
 from torch.autograd import Variable
 
 runtime = 'online' # ['local', 'online']
 if runtime == 'online':
     print (' - Online Runtime')
     from src.nets2_utils import *
+    from src.pruning.weightPruning.layers import MaskedConv2d
+    from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
+    from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
 elif runtime == 'local':
     print (' - Local Runtime')
     from nets2_utils import *
@@ -809,13 +816,12 @@ class Darknet(nn.Module):
                 model           = nn.Sequential()
                 
                 if batch_normalize:
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
-                    # https://pytorch.org/docs/stable/nn.html#batchnorm2d
+                    # model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad, bias=False))
                     model.add_module('bn{0}'.format(conv_id), nn.BatchNorm2d(filters))
-                    #model.add_module('bn{0}'.format(conv_id), BN2d(filters))
                 else:
                     print ('  -- [DEBUG] Non-BN Block : ', block)
-                    model.add_module('conv{0}'.format(conv_id), nn.Conv2d(prev_filters, filters, kernel_size, stride, pad))
+                    model.add_module('conv{0}'.format(conv_id), MaskedConv2d(prev_filters, filters, kernel_size, stride, pad))
 
                 if activation == 'leaky':
                     model.add_module('leaky{0}'.format(conv_id), nn.LeakyReLU(0.1, inplace=True))
@@ -1074,8 +1080,18 @@ def getYOLOv2(cfgfile, weightfile):
         model.cuda()
     return model
 
-if __name__ == "__main__":
-    DIR_MAIN      = os.path.abspath('../../repo1')
-    MODEL_CFG     = os.path.join(DIR_MAIN, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
-    MODEL_WEIGHTS = os.path.join(DIR_MAIN, 'data/weights/github_pjreddie/yolov2-voc.weights')
-    model = getYOLOv2(MODEL_CFG, MODEL_WEIGHTS)
+# if __name__ == '__main__':
+#     DIR_MAIN      = os.path.abspath('../../repo1')
+#     MODEL_CFG     = os.path.join(DIR_MAIN, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
+#     MODEL_WEIGHTS = os.path.join(DIR_MAIN, 'data/weights/github_pjreddie/yolov2-voc.weights')
+#     model = getYOLOv2(MODEL_CFG, MODEL_WEIGHTS)
+#     if (0):
+#         for pruning_perc in [10.,30.,50.,70.,90.,99.]:
+#             masks = weight_prune(model, pruning_perc)
+#             print("Num masks: ", len(masks))
+#             model.set_masks(masks)
+#             prune_rate(model)
+#             print(are_masks_consistent(model, masks))
+#             #model.save_weights('yolov2-voc-filter-prune-%s.weights' % pruning_perc)
+
+    

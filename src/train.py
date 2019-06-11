@@ -19,6 +19,7 @@ if (runtime == 'online'):
     if (1):
         from src.predict import *
         from src.nets import *
+        from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
 
 elif runtime == 'local':
     import dataloader as dataloader
@@ -80,7 +81,7 @@ class YOLOv2Train():
     def train(self, PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
                     , MODEL_CFG, MODEL_WEIGHT
                     , BATCH_SIZE, LEARNING_RATES, MAX_EPOCHS
-                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0):
+                    , LOGGER='', DEBUG_EPOCHS=-1, verbose=0,pruning_perc=0.,pruning_method="weight"):
 
         # Step1 - Model Config        
         if (1):
@@ -152,7 +153,7 @@ class YOLOv2Train():
 
         # Step4 - Model Saving
         if (1): 
-            save_interval = 10  # epoches
+            SAVE_INTERNAL = 10  # epoches
             dot_interval  = 70  # batches
 
         # Step5 -  Test parameters
@@ -167,7 +168,18 @@ class YOLOv2Train():
             print (' -- init_epoch : ', init_epoch)
             print (' -- max_epochs : ', max_epochs)
 
-        for epoch in range(init_epoch, max_epochs): 
+        # Step 100 - PRUNE THAT THING...
+        if (1):
+            if pruning_perc > 0:
+                if pruning_method == "filter":
+                    masks = quick_filter_prune(self.model, pruning_perc)
+                else:
+                    masks = weight_prune(self.model, pruning_perc)
+                self.model.set_masks(masks)
+                p_rate = prune_rate(self.model,True)
+                print(' %s=pruned: %s' % (pruning_method, p_rate))
+
+        for epoch in range(init_epoch, max_epochs):
             
             if (1):
                 if epoch > 0:
@@ -243,7 +255,12 @@ class YOLOv2Train():
                             traceback.print_exc()
                             pdb.set_trace()
 
-                        # pdb.set_trace()
+            if pruning_perc > 0:
+                print(' pruned: %s' % prune_rate(self.model,False))
+                print(' pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
+                if (epoch + 1) % 5 == 0:
+                    logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+                    self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
 
             if LOGGER != '':
                 train_loss_avg = train_loss_total / len(train_loader)
@@ -254,10 +271,10 @@ class YOLOv2Train():
 
             # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
-            # Save weights
-            if (epoch+1) % save_interval == 0:
-                logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
-                self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
+            # # Save weights
+            # if (epoch+1) % SAVE_INTERNAL == 0:
+            #     logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
+            #     self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
 
             ## ----------------------- TEST ------------------------
             # self.test(epoch)
@@ -265,6 +282,9 @@ class YOLOv2Train():
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
                                         , LOGGER, epoch)
             valObj.predict(BATCH_SIZE)
+
+        logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+        self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
         # end for epoch
 
     def adjust_learning_rate(self, optimizer, batch, learning_rate, steps, scales, batch_size):

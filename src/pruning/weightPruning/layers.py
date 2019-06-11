@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from weightPruning.utils import to_var
+from src.pruning.weightPruning.utils import to_var
 
 
 class MaskedLinear(nn.Linear):
