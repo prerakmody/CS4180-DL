@@ -191,10 +191,12 @@ class PASCALVOCEval():
         for i in range(self.MODEL.num_classes):
             fps[i].close()
         
-        mAP = self._do_python_eval()
+        mAP, finalMAP = self._do_python_eval()
         if self.LOGGER != '' :
             if self.MODEL_LOSS != None:
                 self.LOGGER.save_value('mAP', 'Val mAP', self.LOGGER_EPOCH+1, mAP)
+                for mAP_obj in finalMAP:
+                    self.LOGGER.save_value('AP - Classes', mAP_obj[0], self.LOGGER_EPOCH+1, mAP_obj[1])
 
     # Step2.2 - Reading XML annotations
     def parse_rec(self, filename):
@@ -439,7 +441,7 @@ class PASCALVOCEval():
         print('~~~~~~~~')
         mAP = np.mean(aps)
         print('Mean AP = {:.4f}'.format(mAP))
-        return mAP
+        return mAP, finalMAP
 
         # print('~~~~~~~~')
         # print('Results:')
