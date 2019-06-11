@@ -213,7 +213,7 @@ class YOLOv2Train():
                                 break
 
                         pbar.update(self.batch_size)
-                        if (batch_idx == 0):
+                        if (batch_idx == 0 and epoch == 0):
                             print ('  - [INFO] data (or X) : ', data.shape, ' || type : ', data.dtype)       # = torch.Size([1, 3, 416, 416]) torch.float32
                             print ('  - [INFO] target (or Y) : ', target.shape, ' || type : ', target.dtype) # = torch.Size([1, 250]) torch.float64
                             print ('  - [INFO] Total train points : ', len(train_loader), ' || nsamples : ', nsamples)

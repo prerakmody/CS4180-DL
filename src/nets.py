@@ -388,7 +388,7 @@ def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, n
                     break
                 if verbose : print ('  -- [build_targets]')
 
-                nGT      = nGT + 1
+                nGT      = nGT + 1 # only for debugging purposes
                 best_iou = 0.0
                 best_n   = -1
                 min_dist = 10000
@@ -449,10 +449,10 @@ def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, n
                     gt_box                        = [gx, gy, gw, gh]
                     pred_box                      = pred_boxes[b*nAnchors + best_n*nPixels + gj*nW + gi]
                     iou                           = bbox_iou(gt_box, pred_box, x1y1x2y2=False) # best_iou
-                    tconf[b][best_n][gj][gi]      = iou # [Confused - why not 1!]
+                    tconf[b][best_n][gj][gi]      = iou # [Confused - why not 1! Because the comparison is with a predetermined set of anchors and not the exact BBox]
                     tcls[b][best_n][gj][gi]       = target[b][t*5]
-                    if iou > THRESH_IOU:
-                        nCorrect = nCorrect + 1
+
+                    if iou > THRESH_IOU : nCorrect = nCorrect + 1 # only for debugging purposes
 
     return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls
 
@@ -470,7 +470,7 @@ class RegionLoss(nn.Module):
         if (1):
             self.coord_scale    = 1
             self.noobject_scale = 1
-            self.object_scale   = 1 # [5,1]
+            self.object_scale   = 5 # [5,1]
             self.class_scale    = 1
             self.thresh         = 0.6
         
@@ -487,7 +487,7 @@ class RegionLoss(nn.Module):
     def forward(self, output, target, verbose=0):
         verbose_shapes = 0
         verbose_loss   = 0
-        CONF_THRESH    = 0.25
+        CONF_THRESH    = 0.25 # only used for debugging purposes
 
         ## -------------------------- STEP 0 (init) -------------------------- ## 
         if (1):

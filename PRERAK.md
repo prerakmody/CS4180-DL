@@ -106,7 +106,8 @@
 ## Check if training with original weights is running
     - Things Changed
         - Loss Function
-            - []
+            - [Changed] RegionLoss().object_scale = 1 [from 5]
+            - [Link] Check this --> https://github.com/sony/nnabla-examples/tree/master/object-detection/yolov2
         - Training Params
             - [Changed] LR = 0.00001 (from 0.001)
                 - LR = 0.00001 [No affect (mAP plateaus at ~0.68)]

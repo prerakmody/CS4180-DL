@@ -71,6 +71,7 @@ class PASCALVOCEval():
     
     # Step1 - Entry Point - Make .txt files with predictions
     def predict(self, BATCH_SIZE=2, CONF_THRESH=0.005,NMS_THRESH=0.45):
+        # above default params from here --> https://github.com/marvis/pytorch-yolo2/blob/6c7c1561b42804f4d50d34e0df220c913711f064/valid.py#L47
         # CONF_THRESH=0.25,NMS_THRESH=0.45, IOU_THRESH    = 0.5
 
         # Step1 - Get Model
@@ -436,9 +437,9 @@ class PASCALVOCEval():
 
         ## -------------------------- STEP 2 (print results) -------------------------- ##
         df_MAP = pd.DataFrame(finalMAP, columns=['class', 'mAP'])        
-        print('~~~~~~~~')
-        print (df_MAP)
-        print('~~~~~~~~')
+        # print('~~~~~~~~')
+        # print (df_MAP)
+        # print('~~~~~~~~')
         mAP = np.mean(aps)
         print('Mean AP = {:.4f}'.format(mAP))
         return mAP, finalMAP

@@ -172,7 +172,9 @@ def get_region_boxes(output, CONF_THRESH, num_classes, anchors_list, anchors_cel
 
         box_confs   = torch.sigmoid(output[4])
 
-        cls_confs                  = torch.nn.Softmax()(Variable(output[5:5+num_classes].transpose(0,1))).data
+        # [TODO] Need to fix this
+        ## Implicit dimension choice for softmax has been deprecated. Change the call to include dim=X as an argument
+        cls_confs                  = torch.nn.Softmax(dim=1)(Variable(output[5:5+num_classes].transpose(0,1))).data
         cls_max_confs, cls_max_ids = torch.max(cls_confs, 1)
         cls_max_confs              = cls_max_confs.view(-1)
         cls_max_ids                = cls_max_ids.view(-1)
