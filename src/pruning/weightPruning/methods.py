@@ -40,13 +40,11 @@ def quick_filter_prune(model, pruning_perc):
             masks.append(np.ones(p_np.shape).astype('float32'))                           
 
             # find the scaled l2 norm for each filter this layer
-            value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
-                .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
+            value_this_layer = np.sum(np.square(p_np), (1,2,3)) /(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
             # normalization (important)
-            value_this_layer = value_this_layer / \
-                np.sqrt(np.square(value_this_layer).sum())
-            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
+            value_this_layer = value_this_layer / np.sqrt(np.square(value_this_layer).sum())
             max_value = np.max(value_this_layer)
+
 
             value_this_layer /= max_value
 
@@ -66,7 +64,6 @@ def quick_filter_prune(model, pruning_perc):
             # normalization (important)
             value_this_layer = value_this_layer / \
                 np.sqrt(np.square(value_this_layer).sum())
-            min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
             max_value = np.max(value_this_layer)
 
             value_this_layer /= max_value

@@ -56,14 +56,21 @@ def test(model, loader):
     return acc
     
 
-def prune_rate(model, verbose=True):
+def prune_rate(model, method="weight", verbose=True):
     """
     Print out prune rate for each layer and the whole network
     """
     total_nb_param = 0
     nb_zero_param = 0
 
+    total_filters = 0
+    total_zero_filters = 0
+
     layer_id = 0
+
+    # Along with %, show ratio, also what method is being used
+    if verbose:
+        print("Pruning with method: {}-pruning".format(method))
 
     for parameter in model.parameters():
 
@@ -74,20 +81,33 @@ def prune_rate(model, verbose=True):
 
         # only pruning linear and conv layers
         if len(parameter.data.size()) != 1:
+            total_filters += parameter.shape[0]
             layer_id += 1
-            zero_param_this_layer = \
-                np.count_nonzero(parameter.cpu().data.numpy()==0)
+            zero_param_this_layer = np.count_nonzero(parameter.cpu().data.numpy()==0)
             nb_zero_param += zero_param_this_layer
 
-            if verbose:
-                print("Layer {} | {} layer | {:.2f}% parameters pruned" \
-                    .format(
+            zero_filters = parameter.shape[0] - np.count_nonzero(np.sum(parameter.cpu().data.numpy(), (1,2,3)))
+            total_zero_filters += zero_filters
+
+            if verbose and method == "weight":
+                print("Layer {} | {} layer | {:.2f}% weights pruned".format(
                         layer_id,
-                        'Conv' if len(parameter.data.size()) == 4 \
-                            else 'Linear',
-                        100.*zero_param_this_layer/param_this_layer,
+                        'Conv' if len(parameter.data.size()) == 4 else 'Linear',
+                        100.*zero_param_this_layer/param_this_layer
                         ))
-    pruning_perc = 100.*nb_zero_param/total_nb_param
+            elif verbose and method == "filter":
+                print("Layer {} | {} layer | {:.2f}% filters pruned | {}/{}".format(
+                        layer_id,
+                        'Conv' if len(parameter.data.size()) == 4 else 'Linear',
+                        100.*(zero_filters)/parameter.shape[0],
+                        zero_filters,
+                        parameter.shape[0]
+                        ))
+    
+    if method == "weight":
+        pruning_perc = 100.*nb_zero_param/total_nb_param
+    else:
+        pruning_perc = 100.*total_zero_filters/total_filters
     if verbose:
         print("Final pruning rate: {:.2f}%".format(pruning_perc))
     return pruning_perc
@@ -127,7 +147,7 @@ def are_masks_consistent(model, masks):
 
     sum_non_zero = 0
     for i in range(len(conv_params)):
-        vals = conv_params[i] * inverted_masks[i]
+        vals = conv_params[i] * inverted_masks[i].cuda()
         sum_non_zero += vals.sum((0,1,2,3)).item()
 
     return sum_non_zero == 0
