@@ -1100,6 +1100,16 @@ class Darknet(nn.Module):
                 traceback.print_exc()
                 pdb.set_trace()
 
+    def set_masks(self, masks):
+        count = 0
+        for m in self.modules():
+            try:
+                if m[0].name == 'MaskedConv2d':
+                    m[0].set_mask(masks[count])
+                    count += 1
+            except:
+                pass
+
 def debug_weights(model):
     for name, param in model.named_parameters():
         if param.requires_grad:
