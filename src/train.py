@@ -14,7 +14,7 @@ from torch.autograd import Variable
 runtime = 'online' # ['local', 'online']
 
 if (runtime == 'online'):
-    print (' - [train.py] Online Runtime')
+    # print (' - [train.py] Online Runtime')
     import src.dataloader as dataloader
     from src.nets2_utils import *
     if (1):
