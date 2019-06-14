@@ -18,7 +18,7 @@ import torchvision.transforms as transforms
 
 runtime = 'online' # ['local', 'online']
 if runtime == 'online':
-    print (' - [predict.py] Online Runtime')
+    #print (' - [predict.py] Online Runtime')
     if (1):
         from src.nets import *
         from src.dataloader import * 
@@ -343,7 +343,7 @@ class PASCALVOCEval():
 
             # sort by confidence
             try:
-                sorted_ind = np.argsort(-   )
+                sorted_ind = np.argsort(-confidence)
                 sorted_scores = np.sort(-confidence)
                 BB = BB[sorted_ind, :]
                 image_ids = [image_ids[x] for x in sorted_ind]

@@ -21,7 +21,7 @@ from torch.autograd import Variable
 
 runtime = 'online' # ['local', 'online']
 if runtime == 'online':
-    print (' - [predict.py] Online Runtime')
+    # print (' - [predict.py] Online Runtime')
     from src.nets2_utils import *
     from src.pruning.weightPruning.layers import MaskedConv2d
     from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune

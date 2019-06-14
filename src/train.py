@@ -14,7 +14,7 @@ from torch.autograd import Variable
 runtime = 'online' # ['local', 'online']
 
 if (runtime == 'online'):
-    print (' - [train.py] Online Runtime')
+    # print (' - [train.py] Online Runtime')
     import src.dataloader as dataloader
     from src.nets2_utils import *
     if (1):
@@ -187,7 +187,7 @@ class YOLOv2Train():
                     masks = weight_prune(self.model, pruning_perc)
                 self.model.set_masks(masks)
                 p_rate = prune_rate(self.model,True)
-                print(' -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
+                print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
 
                 ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)
                 valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss

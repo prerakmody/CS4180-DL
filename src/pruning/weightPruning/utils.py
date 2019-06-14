@@ -69,8 +69,8 @@ def prune_rate(model, method="weight", verbose=True):
     layer_id = 0
 
     # Along with %, show ratio, also what method is being used
-    if verbose:
-        print("Pruning with method: {}-pruning".format(method))
+    #if verbose:
+    #    print("Pruning with method: {}-pruning".format(method))
 
     for parameter in model.parameters():
 
