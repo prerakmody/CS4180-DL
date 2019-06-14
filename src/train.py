@@ -186,7 +186,7 @@ class YOLOv2Train():
                 else:
                     masks = weight_prune(self.model, pruning_perc)
                 self.model.set_masks(masks)
-                p_rate = prune_rate(self.model,True)
+                p_rate = prune_rate(self.model,pruning_method,True)
                 print(' -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
 
                 ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)

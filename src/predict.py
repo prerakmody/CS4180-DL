@@ -343,14 +343,13 @@ class PASCALVOCEval():
 
             # sort by confidence
             try:
-                sorted_ind = np.argsort(-   )
+                sorted_ind = np.argsort(-confidence)
                 sorted_scores = np.sort(-confidence)
                 BB = BB[sorted_ind, :]
                 image_ids = [image_ids[x] for x in sorted_ind]
             except:
                 print ('  -- [ERROR][PASCALVOCEval.voc_eval()] classname : ', classname)
                 traceback.print_exc()
-                pdb.set_trace()
 
             # go down dets and mark TPs and FPs
             nd = len(image_ids)
