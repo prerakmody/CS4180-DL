@@ -18,7 +18,7 @@ import torchvision.transforms as transforms
 
 runtime = 'online' # ['local', 'online']
 if runtime == 'online':
-    print (' - Online Runtime')
+    print (' - [predict.py] Online Runtime')
     if (1):
         from src.nets import *
         from src.dataloader import * 
@@ -342,10 +342,15 @@ class PASCALVOCEval():
             BB = np.array([[float(z) for z in x[2:]] for x in splitlines])
 
             # sort by confidence
-            sorted_ind = np.argsort(-confidence)
-            sorted_scores = np.sort(-confidence)
-            BB = BB[sorted_ind, :]
-            image_ids = [image_ids[x] for x in sorted_ind]
+            try:
+                sorted_ind = np.argsort(-   )
+                sorted_scores = np.sort(-confidence)
+                BB = BB[sorted_ind, :]
+                image_ids = [image_ids[x] for x in sorted_ind]
+            except:
+                print ('  -- [ERROR][PASCALVOCEval.voc_eval()] classname : ', classname)
+                traceback.print_exc()
+                pdb.set_trace()
 
             # go down dets and mark TPs and FPs
             nd = len(image_ids)

@@ -21,7 +21,7 @@ from torch.autograd import Variable
 
 runtime = 'online' # ['local', 'online']
 if runtime == 'online':
-    print (' - Online Runtime')
+    print (' - [predict.py] Online Runtime')
     from src.nets2_utils import *
     from src.pruning.weightPruning.layers import MaskedConv2d
     from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
@@ -735,7 +735,7 @@ class Darknet(nn.Module):
         self.header = torch.IntTensor([0,0,0,0])
         self.seen = 0
 
-    def forward(self, x):
+    def forward(self, x):   
         ind = -2
         # self.loss = None
         outputs = dict()
@@ -841,10 +841,12 @@ class Darknet(nn.Module):
                     model = MaxPoolStride1()
                 out_filters.append(prev_filters)
                 models.append(model)
+
             elif block['type'] == 'avgpool':
                 model = GlobalAvgPool2d()
                 out_filters.append(prev_filters)
                 models.append(model)
+
             elif block['type'] == 'softmax':
                 model = nn.Softmax()
                 out_filters.append(prev_filters)
@@ -1067,16 +1069,36 @@ class Darknet(nn.Module):
             else:
                 print('unknown type %s' % (block['type']))
         fp.close()
-
+    
     def set_masks(self, masks):
-        count = 0
-        for m in self.modules():
+        if (0):
+            count = 0
             try:
-                if m[0].name == 'MaskedConv2d':
-                    m[0].set_mask(masks[count])
-                    count += 1
+                for m in self.modules():
+                    try:
+                        if m[0].name == 'MaskedConv2d':
+                            m[0].set_mask(masks[count])
+                            count += 1
+                    except:
+                        pass
             except:
-                pass
+                print ('  -- [ERROR][Darknet][set_masks()] : ')
+                pdb.set_trace()
+
+        else:
+            count = 0
+            try:
+                for m in self.models:
+                    try:
+                        if m[0].name == 'MaskedConv2d':
+                            m[0].set_mask(masks[count])
+                            count += 1
+                    except:
+                        pass
+            except:
+                print ('  -- [ERROR][Darknet][set_masks()] : ')
+                traceback.print_exc()
+                pdb.set_trace()
 
 def debug_weights(model):
     for name, param in model.named_parameters():

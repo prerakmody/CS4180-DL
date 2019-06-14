@@ -90,13 +90,13 @@ def prune_rate(model, method="weight", verbose=True):
             total_zero_filters += zero_filters
 
             if verbose and method == "weight":
-                print("Layer {} | {} layer | {:.2f}% weights pruned".format(
+                print("  -- [DEBUG][pruning] Layer {} | {} layer | {:.2f}% weights pruned".format(
                         layer_id,
                         'Conv' if len(parameter.data.size()) == 4 else 'Linear',
                         100.*zero_param_this_layer/param_this_layer
                         ))
             elif verbose and method == "filter":
-                print("Layer {} | {} layer | {:.2f}% filters pruned | {}/{}".format(
+                print("  -- [DEBUG][pruning]Layer {} | {} layer | {:.2f}% filters pruned | {}/{}".format(
                         layer_id,
                         'Conv' if len(parameter.data.size()) == 4 else 'Linear',
                         100.*(zero_filters)/parameter.shape[0],
@@ -109,7 +109,7 @@ def prune_rate(model, method="weight", verbose=True):
     else:
         pruning_perc = 100.*total_zero_filters/total_filters
     if verbose:
-        print("Final pruning rate: {:.2f}%".format(pruning_perc))
+        print("  -- [DEBUG][pruning] Final pruning rate: {:.2f}%".format(pruning_perc))
     return pruning_perc
 
 
