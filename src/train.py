@@ -14,6 +14,7 @@ from torch.autograd import Variable
 runtime = 'online' # ['local', 'online']
 
 if (runtime == 'online'):
+    print (' - [train.py] Online Runtime')
     import src.dataloader as dataloader
     from src.nets2_utils import *
     if (1):
@@ -128,6 +129,8 @@ class YOLOv2Train():
             torch.manual_seed(seed)
             if self.use_cuda:
                 torch.cuda.manual_seed(seed)
+            # [TODO]
+            # torch.backends.cudnn.deterministic=True
             
             region_loss       = self.model.loss
             region_loss.seen  = self.model.seen
@@ -165,19 +168,32 @@ class YOLOv2Train():
         # Step 99 - Random Printing
         if (1):
             print ('')
-            print (' -- init_epoch : ', init_epoch)
-            print (' -- max_epochs : ', max_epochs)
+            #print (' -- init_epoch : ', init_epoch)
+            #print (' -- max_epochs : ', max_epochs)
 
         # Step 100 - PRUNE THAT THING...
+        """
+         - weight pruning : here we prune x% of all neurons on the basis of their abs value
+         - filter pruning : here we prune x% of all filters in every layer of the model on the 
+                               basis of their L2 norm
+        """
         if (1):
             if pruning_perc > 0:
+                print ('')
+                print ('  -- [DEBUG][pruning] Finding things to prune .... ')
                 if pruning_method == "filter":
                     masks = quick_filter_prune(self.model, pruning_perc)
                 else:
                     masks = weight_prune(self.model, pruning_perc)
                 self.model.set_masks(masks)
                 p_rate = prune_rate(self.model,True)
-                print(' %s=pruned: %s' % (pruning_method, p_rate))
+                print(' -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
+
+                ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)
+                valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
+                                            , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
+                                            , LOGGER, LOGGER_EPOCH=0)
+                valObj.predict(BATCH_SIZE)
 
         for epoch in range(init_epoch, max_epochs):
             
@@ -256,8 +272,8 @@ class YOLOv2Train():
                             pdb.set_trace()
 
             if pruning_perc > 0:
-                print(' pruned: %s' % prune_rate(self.model,False))
-                print(' pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
+                print('  -- [DEBUG][pruning] pruned: %s' % prune_rate(self.model,False))
+                print('  -- [DEBUG][pruning] pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
                 if (epoch + 1) % 5 == 0:
                     logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
                     self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
@@ -269,22 +285,17 @@ class YOLOv2Train():
                 LOGGER.save_value('Learning Rate', 'Learning Rate', epoch+1, LRs[epoch])
                 train_loss_total       = 0.0
 
-            # logging('training with %f samples/s' % (len(train_loader.dataset)/(t1-t0)))
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
-            # # Save weights
-            # if (epoch+1) % SAVE_INTERNAL == 0:
-            #     logging('save weights to %s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
-            #     self.model.save_weights('%s/%s_%06d.weights' % (backupdir, VAL_PREFIX, epoch+1))
-
-            ## ----------------------- TEST ------------------------
-            # self.test(epoch)
+        
+            ## ----------------------- VALIDATE ------------------------
             valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
                                         , LOGGER, epoch)
             valObj.predict(BATCH_SIZE)
 
-        logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
-        self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
+        if (1):
+            logging('save weights to %s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+            self.model.save_weights('%s/%s-pruned-%s-retrained-final_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
         # end for epoch
 
     def adjust_learning_rate(self, optimizer, batch, learning_rate, steps, scales, batch_size):

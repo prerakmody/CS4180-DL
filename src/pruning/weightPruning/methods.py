@@ -29,31 +29,40 @@ def quick_filter_prune(model, pruning_perc):
     '''
     Prune pruning_perc% filters globally
     '''
+    # Step0 - Return Value
     masks = []
+    values = [] # holds the L2 norms of all filters
 
-    values = []
+    # Step1 - Loop over all modules
     for p in model.parameters():
 
-        if len(p.data.size()) == 4: # nasty way of selecting conv layer
+        # [TODO] p.name == 'MaskedCOnv2D'
+        # Step2 - Pick a MaskedCOnv2D
+        if len(p.data.size()) == 4: # nasty way of selecting conv layer #[prev_filter,curr_filter,H,W]
             p_np = p.data.cpu().numpy()
 
             masks.append(np.ones(p_np.shape).astype('float32'))                           
 
+            # Step3 - Find L2 norm 
             # find the scaled l2 norm for each filter this layer
             value_this_layer = np.square(p_np).sum(axis=1).sum(axis=1)\
                 .sum(axis=1)/(p_np.shape[1]*p_np.shape[2]*p_np.shape[3])
             # normalization (important)
             value_this_layer = value_this_layer / \
                 np.sqrt(np.square(value_this_layer).sum())
+            
+            # Step ?? - Not used
             min_value, min_ind = arg_nonzero_min(list(value_this_layer))           
-            max_value = np.max(value_this_layer)
 
+            # Step 4 - Appending L2 norms            
+            max_value        = np.max(value_this_layer)
             value_this_layer /= max_value
+            values           = np.concatenate((values, value_this_layer))
 
-            values = np.concatenate((values, value_this_layer))
-
+    # Step5 - Find the threshold
     threshold = np.percentile(values, pruning_perc)
 
+    # Step6 - Prune on the basis of threshold
     ind = 0
     for p in model.parameters():
 
@@ -71,6 +80,7 @@ def quick_filter_prune(model, pruning_perc):
 
             value_this_layer /= max_value
 
+            # masks[ind].shape = [B,3,3,3]
             masks[ind][value_this_layer < threshold] = 0.
             ind += 1
       

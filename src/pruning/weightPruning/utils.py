@@ -80,7 +80,7 @@ def prune_rate(model, verbose=True):
             nb_zero_param += zero_param_this_layer
 
             if verbose:
-                print("Layer {} | {} layer | {:.2f}% parameters pruned" \
+                print("  -- [DEBUG][pruning] Layer {} | {} layer | {:.2f}% parameters pruned" \
                     .format(
                         layer_id,
                         'Conv' if len(parameter.data.size()) == 4 \
@@ -89,7 +89,7 @@ def prune_rate(model, verbose=True):
                         ))
     pruning_perc = 100.*nb_zero_param/total_nb_param
     if verbose:
-        print("Final pruning rate: {:.2f}%".format(pruning_perc))
+        print("  -- [DEBUG][pruning] Final pruning rate: {:.2f}%".format(pruning_perc))
     return pruning_perc
 
 
