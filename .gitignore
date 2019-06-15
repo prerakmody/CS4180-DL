@@ -1,6 +1,6 @@
 data/*
 
-
-*/.ipynb_checkpoints/*
+.png
+.ipynb_checkpoints
 */__pycache__/*
 *.pyc
