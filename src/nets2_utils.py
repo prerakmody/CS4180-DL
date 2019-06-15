@@ -1,4 +1,5 @@
 import sys
+import pdb
 import os
 import time
 import math
@@ -11,6 +12,8 @@ from torch.autograd import Variable
 
 import struct # get_image_size
 import imghdr # get_image_size
+
+import matplotlib.pyplot as plt
 
 
 def parse_cfg(cfgfile, verbose=0):
@@ -172,7 +175,7 @@ def get_region_boxes(output, CONF_THRESH, num_classes, anchors_list, anchors_cel
 
         box_confs   = torch.sigmoid(output[4])
 
-        cls_confs                  = torch.nn.Softmax()(Variable(output[5:5+num_classes].transpose(0,1))).data
+        cls_confs                  = torch.nn.Softmax(dim=1)(Variable(output[5:5+num_classes].transpose(0,1))).data
         cls_max_confs, cls_max_ids = torch.max(cls_confs, 1)
         cls_max_confs              = cls_max_confs.view(-1)
         cls_max_ids                = cls_max_ids.view(-1)
@@ -257,47 +260,130 @@ def nms(boxes, NMS_THRESH):
 
 # ----------------------------------- ?? -----------------------------------
 
-def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
+def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None, verbose=0):
     import cv2
-    colors = torch.FloatTensor([[1,0,1],[0,0,1],[0,1,1],[0,1,0],[1,1,0],[1,0,0]]);
-    def get_color(c, x, max_val):
-        ratio = float(x)/max_val * 5
-        i = int(math.floor(ratio))
-        j = int(math.ceil(ratio))
-        ratio = ratio - i
-        r = (1-ratio) * colors[i][c] + ratio*colors[j][c]
-        return int(r*255)
+    colors = [
+            [128, 0, 0], [0, 128, 0], [128, 128, 0],
+            [0, 0, 128], [128, 0, 128], [0, 128, 128], [128, 128, 128], [64, 0, 0], 
+            [192, 0, 0], [64, 128, 0], [192, 128, 0], [64, 0, 128], 
+            [192, 0, 128], [64, 128, 128], [192, 128, 128],
+            [0, 64, 0], [128, 64, 0], [0, 192, 0], [128, 192, 0],
+            [0, 64, 128]]
+    # def get_color(c, x, max_val):
+    #     ratio = float(x)/max_val * 5
+    #     i = int(math.floor(ratio))
+    #     j = int(math.ceil(ratio))
+    #     ratio = ratio - i
+    #     r = (1-ratio) * colors[i][c] + ratio*colors[j][c]
+    #     return int(r*255)
 
     width = img.shape[1]
     height = img.shape[0]
+    # print ('  -- [DEBUG][plot_boxes_cv2] boxes : ', len(boxes))
     for i in range(len(boxes)):
         box = boxes[i]
-        x1 = int(round((box[0] - box[2]/2.0) * width))
-        y1 = int(round((box[1] - box[3]/2.0) * height))
-        x2 = int(round((box[0] + box[2]/2.0) * width))
-        y2 = int(round((box[1] + box[3]/2.0) * height))
+        
+        x1 = int(round((box[0].item() - box[2].item()/2.0) * width))
+        y1 = int(round((box[1].item() - box[3].item()/2.0) * height))
+        x2 = int(round((box[0].item() + box[2].item()/2.0) * width))
+        y2 = int(round((box[1].item() + box[3].item()/2.0) * height))
+        
+        # if color:
+        #     rgb = color
+        # else:
+        #     rgb = (255, 0, 0)
 
-        if color:
-            rgb = color
-        else:
-            rgb = (255, 0, 0)
         if len(box) >= 7 and class_names:
-            cls_conf = box[5]
-            cls_id = box[6]
-            print('%s: %f' % (class_names[cls_id], cls_conf))
-            classes = len(class_names)
-            offset = cls_id * 123457 % classes
-            red   = get_color(2, offset, classes)
-            green = get_color(1, offset, classes)
-            blue  = get_color(0, offset, classes)
-            if color is None:
-                rgb = (red, green, blue)
-            img = cv2.putText(img, class_names[cls_id], (x1,y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
-        img = cv2.rectangle(img, (x1,y1), (x2,y2), rgb, 1)
-    if savename:
+            box_conf   = box[4]
+            cls_conf   = box[5]
+            cls_id     = box[6]
+            cls_color  = colors[cls_id]
+            class_name = class_names[cls_id]
+            if (0):
+                cls_font   = cv2.FONT_HERSHEY_PLAIN
+                cls_font_scale = 1.0
+                cls_font_thick = 1
+            else:
+                cls_font   = cv2.FONT_HERSHEY_SIMPLEX
+                cls_font_scale = 0.6
+                cls_font_thick = 1
+
+            if verbose:
+                print('  -- [DEBUG][plot_boxes_cv2] %s: %.3f || %.3f' % (class_names[cls_id], box_conf, cls_conf))
+            
+            img = cv2.rectangle(img, (x1,y1), (x2,y2), cls_color, 3)    
+            text_size, baseline = cv2.getTextSize(class_name, cls_font, cls_font_scale, cls_font_thick)
+            if (y1-text_size[1] > 0):
+                p1                  = (x1, y1- text_size[1])
+                img = cv2.rectangle(img, (p1[0] - 2//2, p1[1] - 2 - baseline), (p1[0] + text_size[0], p1[1] + text_size[1]), cls_color, -1)
+                img = cv2.putText(img, class_name, (x1,y1), cls_font, cls_font_scale, (255,255,255), cls_font_thick,cv2.LINE_AA)
+            else:
+                p1                  = (x2 - text_size[0], y2)
+                print (p1)
+                img = cv2.rectangle(img, (p1[0] - 2//2, p1[1] - 2 - baseline), (p1[0] + text_size[0], p1[1] + text_size[1]), cls_color, -1)
+                img = cv2.putText(img, class_name, (x2 - text_size[0],y2), cls_font, cls_font_scale, (255,255,255), cls_font_thick,cv2.LINE_AA)
+        
+    if 0:
         print("save plot results to %s" % savename)
         cv2.imwrite(savename, img)
+
+    # img  = cv2.copyMakeBorder(img,10,10,10,10,cv2.BORDER_CONSTANT,value=[255, 255, 255])
+    # img  = cv2.resize(img,(416,416))
     return img
+
+def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1, verbose=0):
+    model.eval()
+    t0 = time.time()
+
+    if isinstance(img, Image.Image):
+        width = img.width
+        height = img.height
+        img = torch.ByteTensor(torch.ByteStorage.from_buffer(img.tobytes()))
+        img = img.view(height, width, 3).transpose(0,1).transpose(0,2).contiguous()
+        img = img.view(1, 3, height, width)
+        img = img.float().div(255.0)
+    elif type(img) == np.ndarray: # cv2 image
+        img = torch.from_numpy(img.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
+    else:
+        print("unknow image type")
+        exit(-1)
+
+    t1 = time.time()
+
+    if use_cuda:
+        img = img.cuda()
+    img = torch.autograd.Variable(img)
+    t2 = time.time()
+
+    output = model(img)
+    output = output.data
+    #for j in range(100):
+    #    sys.stdout.write('%f ' % (output.storage()[j]))
+    #print('')
+    t3 = time.time()
+
+    boxes = get_region_boxes(output, conf_thresh, model.num_classes, model.anchors, model.num_anchors)[0]
+    
+    #for j in range(len(boxes)):
+    #    print(boxes[j])
+    t4 = time.time()
+
+    boxes = nms(boxes, nms_thresh)
+    if verbose:
+        print ('  -- [DEBUG][do_detect] : boxes (post-nms) :', len(boxes))
+        print ('  -- [DEBUG][do_detect] : boxes :', len(boxes))
+    t5 = time.time()
+
+    if False:
+        print('-----------------------------------')
+        print(' image to tensor : %f' % (t1 - t0))
+        print('  tensor to cuda : %f' % (t2 - t1))
+        print('         predict : %f' % (t3 - t2))
+        print('get_region_boxes : %f' % (t4 - t3))
+        print('             nms : %f' % (t5 - t4))
+        print('           total : %f' % (t5 - t0))
+        print('-----------------------------------')
+    return boxes
 
 def plot_boxes(img, boxes, savename=None, class_names=None):
     colors = torch.FloatTensor([[1,0,1],[0,0,1],[0,1,1],[0,1,0],[1,1,0],[1,0,0]]);
@@ -374,56 +460,6 @@ def image2torch(img):
     img = img.view(1, 3, height, width)
     img = img.float().div(255.0)
     return img
-
-def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
-    model.eval()
-    t0 = time.time()
-
-    if isinstance(img, Image.Image):
-        width = img.width
-        height = img.height
-        img = torch.ByteTensor(torch.ByteStorage.from_buffer(img.tobytes()))
-        img = img.view(height, width, 3).transpose(0,1).transpose(0,2).contiguous()
-        img = img.view(1, 3, height, width)
-        img = img.float().div(255.0)
-    elif type(img) == np.ndarray: # cv2 image
-        img = torch.from_numpy(img.transpose(2,0,1)).float().div(255.0).unsqueeze(0)
-    else:
-        print("unknow image type")
-        exit(-1)
-
-    t1 = time.time()
-
-    if use_cuda:
-        img = img.cuda()
-    img = torch.autograd.Variable(img)
-    t2 = time.time()
-
-    output = model(img)
-    output = output.data
-    #for j in range(100):
-    #    sys.stdout.write('%f ' % (output.storage()[j]))
-    #print('')
-    t3 = time.time()
-
-    boxes = get_region_boxes(output, conf_thresh, model.num_classes, model.anchors, model.num_anchors)[0]
-    #for j in range(len(boxes)):
-    #    print(boxes[j])
-    t4 = time.time()
-
-    boxes = nms(boxes, nms_thresh)
-    t5 = time.time()
-
-    if False:
-        print('-----------------------------------')
-        print(' image to tensor : %f' % (t1 - t0))
-        print('  tensor to cuda : %f' % (t2 - t1))
-        print('         predict : %f' % (t3 - t2))
-        print('get_region_boxes : %f' % (t4 - t3))
-        print('             nms : %f' % (t5 - t4))
-        print('           total : %f' % (t5 - t0))
-        print('-----------------------------------')
-    return boxes
 
 def read_data_cfg(datacfg):
     options = dict()
