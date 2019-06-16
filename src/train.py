@@ -108,6 +108,10 @@ class YOLOv2Train():
             if not os.path.exists(backupdir):
                 print (' - backupdir :', backupdir)
                 os.mkdir(backupdir)
+            img_backupdir = os.path.join(backupdir, 'grad_flow')
+            if not os.path.exists(img_backupdir):
+                print (' - img_backupdir :', img_backupdir)
+                os.mkdir(img_backupdir)
             kwargs = {'num_workers': num_workers, 'pin_memory': True} if self.use_cuda else {}
         
         # Step3 - Training Params    
@@ -222,6 +226,8 @@ class YOLOv2Train():
             self.model.train()
             with tqdm.tqdm_notebook(total = len(train_loader)*self.batch_size) as pbar:
                 train_loss_total       = 0.0
+                ave_grads = {n: 0 for n,p in self.model.named_parameters() if p.requires_grad and "bias" not in n}
+
                 for batch_idx, (data, target) in enumerate(train_loader):
                     if (1):
                         if (DEBUG_EPOCHS > -1):
@@ -261,6 +267,10 @@ class YOLOv2Train():
                                 train_loss.backward()
                                 optimizer.step()
 
+                                for n, p in self.model.named_parameters():
+                                    if(p.requires_grad) and ("bias" not in n):
+                                        ave_grads[n] += p.grad.abs().mean()
+
                                 if verbose:
                                     print (' - loss : ', train_loss)
 
@@ -274,9 +284,9 @@ class YOLOv2Train():
             if pruning_perc > 0:
                 print('  -- [DEBUG][pruning] pruned: %s' % prune_rate(self.model,False))
                 print('  -- [DEBUG][pruning] pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
-                if (epoch + 1) % 5 == 0:
-                    logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
-                    self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
+            if (epoch + 1) % 5 == 0:
+                logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
+                self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
 
             if LOGGER != '':
                 train_loss_avg = train_loss_total / len(train_loader)
@@ -286,7 +296,22 @@ class YOLOv2Train():
                 train_loss_total       = 0.0
 
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
-        
+
+            if (1):
+                layers = [n for n in ave_grads]
+                epoch_means = [ave_grads[n]/batch_idx for n in ave_grads]
+                f,axarr = plt.subplots(1, figsize=(15,15))
+                plt.plot(epoch_means, alpha=0.3, color="b")
+                plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
+                plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
+                plt.xlim(xmin=0, xmax=len(ave_grads))
+                plt.xlabel("Layers")
+                plt.ylabel("average gradient")
+                plt.title("Gradient flow")
+                plt.grid(True)
+                plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
+                plt.close(f)
+
             ## ----------------------- VALIDATE ------------------------
             valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
                                         , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
