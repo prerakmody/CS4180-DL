@@ -1,7 +1,9 @@
+import pdb
 import numpy as np
+
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
+from torch.autograd import Variable
 from torch.utils.data import sampler
 
 
@@ -139,9 +141,12 @@ def arg_nonzero_min(a):
 
     return min_v, min_ix
     
-def are_masks_consistent(model, masks):
-    conv_params = [p for p in model.parameters() if len(p.data.size()) == 4]
+def are_masks_consistent(model, masks, debug=0):
+    conv_params    = [p for p in model.parameters() if len(p.data.size()) == 4]
     inverted_masks = [abs(m - 1) for m in masks]
+
+    if debug:
+        pdb.set_trace()
 
     assert len(conv_params) == len(inverted_masks)
 
