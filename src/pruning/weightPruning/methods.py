@@ -28,7 +28,7 @@ def weight_prune(model, pruning_perc):
             masks.append(pruned_inds.float())
     return masks
 
-def quick_filter_prune_v2(model, pruning_perc, verbose=0):
+def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, verbose=0):
     '''
     Prune pruning_perc% filters globally
     '''
@@ -41,10 +41,14 @@ def quick_filter_prune_v2(model, pruning_perc, verbose=0):
     for module_obj in model.named_parameters():
         
         # Step1 - Pick module name
-        module_name = module_obj[0].split('.')[2]
-        if len(module_name) >= 5:
-            # ('conv' in module_obj[0]) and ('weight' in module_obj[0])
-            conv_id = int(module_name[4:])
+        
+        # if min_conv_id > 0:
+        #     # if len(module_name) >= 5:
+        #     if ('conv' in module_obj[0]) and ('weight' in module_obj[0]):
+        #         module_name = module_obj[0].split('.')[2]  
+        #         conv_id = int(module_name[4:])
+        #         if conv_id < min_conv_id:
+        #             continue 
         
         # Step2 - Pick Up Module weights
         if len(module_obj[1].data.size()) == 4: # nasty way of selecting conv layer #[prev_filter,curr_filter,H,W]
@@ -91,14 +95,22 @@ def quick_filter_prune_v2(model, pruning_perc, verbose=0):
     # Step6 - Prune on the basis of threshold
     ind = 0
     for module_obj in model.named_parameters():
-
-        # Step1 - Find the name
-        module_name = module_obj[0].split('.')[2]
-        if len(module_name) >= 5:
-            conv_id = int(module_name[4:])
         
         # Step2 - Pick Up Module weights
         if len(module_obj[1].data.size()) == 4: # nasty way of selecting conv layer #[prev_filter,curr_filter,H,W]
+
+
+            # Step1 - Find the name
+            if min_conv_id > 0:
+                # if len(module_name) >= 5:
+                if ('conv' in module_obj[0]) and ('weight' in module_obj[0]):
+                    module_name = module_obj[0].split('.')[2]  
+                    conv_id = int(module_name[4:])
+                    if conv_id < min_conv_id:
+                        ind += 1
+                        continue
+
+
             module_weights       = module_obj[1].data.cpu().numpy()
             module_total_weights = module_weights.shape[1]*module_weights.shape[2]*module_weights.shape[3]
             

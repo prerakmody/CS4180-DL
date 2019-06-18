@@ -190,7 +190,7 @@ class YOLOv2Train():
                 if pruning_method == "filter":
                     if (1):
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v2() : ')
-                        masks = quick_filter_prune_v2(self.model, pruning_perc, verbose=0)
+                        masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 14, verbose=0)
                     else:
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v1() : ')
                         masks = quick_filter_prune_v1(self.model, pruning_perc, verbose=0)
@@ -309,36 +309,39 @@ class YOLOv2Train():
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
 
             if (1):
-                layers = [n for n in ave_grads]
+                
                 if (1):
-                    epoch_means = [ave_grads[n]/(batch_idx+1) for n in ave_grads]
+                    # epoch_means = [ave_grads[n]/(batch_idx+1) for n in ave_grads]
+                    layers      = [layer_name for layer_name in ave_grads if 'conv' in layer_name]
+                    epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'conv' in layer_name]
                     f,axarr     = plt.subplots(1, figsize=(15,15))
                     plt.plot(epoch_means, alpha=0.3, color="b")
                     plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
                     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
                     plt.xlim(0, len(ave_grads))
-                    plt.ylim(0, 0.6)
+                    plt.ylim(0, 0.06)
                     plt.xlabel("Layers")
                     plt.ylabel("Avg Gradient Flow")
                     plt.title("Gradient flow - {0}".format(pruning_method))
                     plt.grid(True)
-                    plt.show()
+                    # plt.show()
                     plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
                     plt.close(f)
 
                 if (1):
-                    epoch_means = [ave_grads[layer_name]/(batch_idx+1) if 'bn' in layer_name for layer_name in ave_grads]
+                    layers      = [layer_name for layer_name in ave_grads if 'bn' in layer_name]
+                    epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'bn' in layer_name]
                     f,axarr     = plt.subplots(1, figsize=(15,15))
                     plt.plot(epoch_means, alpha=0.3, color="b")
                     plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
                     plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
                     plt.xlim(0, len(ave_grads))
-                    plt.ylim(0, 0.6)
+                    plt.ylim(0, 0.06)
                     plt.xlabel("Layers")
                     plt.ylabel("Avg Gradient Flow")
                     plt.title("Gradient flow - {0}".format(pruning_method))
                     plt.grid(True)
-                    plt.show()
+                    # plt.show()
                     plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
                     plt.close(f)
 
