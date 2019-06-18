@@ -28,7 +28,7 @@ def weight_prune(model, pruning_perc):
             masks.append(pruned_inds.float())
     return masks
 
-def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, verbose=0):
+def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, max_conv_id=-1, verbose=0):
     '''
     Prune pruning_perc% filters globally
     '''
@@ -41,14 +41,12 @@ def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, verbose=0):
     for module_obj in model.named_parameters():
         
         # Step1 - Pick module name
-        
-        # if min_conv_id > 0:
-        #     # if len(module_name) >= 5:
-        #     if ('conv' in module_obj[0]) and ('weight' in module_obj[0]):
-        #         module_name = module_obj[0].split('.')[2]  
-        #         conv_id = int(module_name[4:])
-        #         if conv_id < min_conv_id:
-        #             continue 
+        conv_id = -1
+        if min_conv_id > 0 and max_conv_id > 0:
+            # if len(module_name) >= 5:
+            if ('conv' in module_obj[0]) and ('weight' in module_obj[0]):
+                module_name = module_obj[0].split('.')[2]  
+                conv_id = int(module_name[4:])
         
         # Step2 - Pick Up Module weights
         if len(module_obj[1].data.size()) == 4: # nasty way of selecting conv layer #[prev_filter,curr_filter,H,W]
@@ -67,9 +65,18 @@ def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, verbose=0):
                 plt.title(module_name)
                 plt.show()
 
-            # Step 4 - Appending L2 norms            
-            values_l2norm           = np.concatenate((values_l2norm, value_this_layer))
-            values_l2norm_tomas     = np.concatenate((values_l2norm_tomas, value_this_layer / np.max(value_this_layer)))
+            # Step 4 - Appending L2 norms
+            print (' - convid : ', conv_id, min_conv_id, max_conv_id)
+            if conv_id > -1 and min_conv_id > 0 and max_conv_id > 0:
+                if conv_id < min_conv_id or conv_id > max_conv_id:
+                    print (' ----------- convid : ', conv_id, min_conv_id, max_conv_id)
+                    continue
+                else:
+                    values_l2norm           = np.concatenate((values_l2norm, value_this_layer))
+                    values_l2norm_tomas     = np.concatenate((values_l2norm_tomas, value_this_layer / np.max(value_this_layer)))
+            else:
+                values_l2norm           = np.concatenate((values_l2norm, value_this_layer))
+                values_l2norm_tomas     = np.concatenate((values_l2norm_tomas, value_this_layer / np.max(value_this_layer)))
 
     # Step5 - Find the threshold
     threshold_l2norm        = np.percentile(values_l2norm                         , pruning_perc)
@@ -99,14 +106,13 @@ def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, verbose=0):
         # Step2 - Pick Up Module weights
         if len(module_obj[1].data.size()) == 4: # nasty way of selecting conv layer #[prev_filter,curr_filter,H,W]
 
-
             # Step1 - Find the name
-            if min_conv_id > 0:
+            if min_conv_id > 0 and max_conv_id > 0:
                 # if len(module_name) >= 5:
                 if ('conv' in module_obj[0]) and ('weight' in module_obj[0]):
                     module_name = module_obj[0].split('.')[2]  
                     conv_id = int(module_name[4:])
-                    if conv_id < min_conv_id:
+                    if conv_id < min_conv_id or conv_id > max_conv_id:
                         ind += 1
                         continue
 

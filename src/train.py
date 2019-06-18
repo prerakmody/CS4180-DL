@@ -190,16 +190,27 @@ class YOLOv2Train():
                 if pruning_method == "filter":
                     if (1):
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v2() : ')
-                        masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 14, verbose=0)
+                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =12, verbose=0)
+                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 14, max_conv_id =19, verbose=0)
+                        masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =19, verbose=0)
                     else:
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v1() : ')
                         masks = quick_filter_prune_v1(self.model, pruning_perc, verbose=0)
                         # masks = filter_prune(self.model, pruning_perc)
+
                 elif pruning_method == 'weight':
                     masks = weight_prune(self.model, pruning_perc)
+                
                 self.model.set_masks(masks)
-                p_rate = prune_rate(self.model,pruning_method,True)
-                print(' -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
+                
+                if pruning_method == 'filter':
+                    p_rate_filter = prune_rate(self.model, 'filter',True)
+                    p_rate_weight = prune_rate(self.model, 'weight',True)
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % ('filter', round(p_rate_filter,5)))
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
+                elif pruning_method == 'weight':
+                    p_rate_weight = prune_rate(self.model,pruning_method,True)
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
 
                 ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)
                 if (0):
@@ -239,7 +250,7 @@ class YOLOv2Train():
 
                 for batch_idx, (data, target) in enumerate(train_loader):
                     if (1):
-                        if (DEBUG_EPOCHS > -1):
+                        if (DEBUG_EPOCHS > -1 and epoch == 0):
                             if batch_idx > DEBUG_EPOCHS:
                                 break
 
