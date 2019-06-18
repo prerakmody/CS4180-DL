@@ -1,7 +1,9 @@
+import pdb
 import numpy as np
+
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
+from torch.autograd import Variable
 from torch.utils.data import sampler
 
 
@@ -95,13 +97,22 @@ def prune_rate(model, method="weight", verbose=True):
                         'Conv' if len(parameter.data.size()) == 4 else 'Linear',
                         100.*zero_param_this_layer/param_this_layer
                         ))
+            # elif verbose and method == "filter":
+            #     print("  -- [DEBUG][pruning]Layer {} | {} layer | {:.2f}% filters pruned | {}/{}".format(
+            #             layer_id,
+            #             'Conv' if len(parameter.data.size()) == 4 else 'Linear',
+            #             100.*(zero_filters)/parameter.shape[0],
+            #             zero_filters,
+            #             parameter.shape[0]
+            #             ))
             elif verbose and method == "filter":
-                print("  -- [DEBUG][pruning]Layer {} | {} layer | {:.2f}% filters pruned | {}/{}".format(
+                print("  -- [DEBUG][pruning]Layer {} | {} layer | {:.2f}% filters pruned | {}/{} | {:.2f}% weights pruned".format(
                         layer_id,
                         'Conv' if len(parameter.data.size()) == 4 else 'Linear',
                         100.*(zero_filters)/parameter.shape[0],
                         zero_filters,
-                        parameter.shape[0]
+                        parameter.shape[0],
+                        100.*zero_param_this_layer/param_this_layer
                         ))
     
     if method == "weight":
@@ -139,9 +150,12 @@ def arg_nonzero_min(a):
 
     return min_v, min_ix
     
-def are_masks_consistent(model, masks):
-    conv_params = [p for p in model.parameters() if len(p.data.size()) == 4]
+def are_masks_consistent(model, masks, debug=0):
+    conv_params    = [p for p in model.parameters() if len(p.data.size()) == 4]
     inverted_masks = [abs(m - 1) for m in masks]
+
+    if debug:
+        pdb.set_trace()
 
     assert len(conv_params) == len(inverted_masks)
 

@@ -1,3 +1,4 @@
+import pdb
 import tqdm
 import time
 import random
@@ -21,6 +22,7 @@ if (runtime == 'online'):
         from src.predict import *
         from src.nets import *
         from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
+        from src.pruning.weightPruning.methods import filter_prune, quick_filter_prune_v2, quick_filter_prune_v1
 
 elif runtime == 'local':
     import dataloader as dataloader
@@ -186,18 +188,36 @@ class YOLOv2Train():
                 print ('')
                 print ('  -- [DEBUG][pruning] Finding things to prune .... ')
                 if pruning_method == "filter":
-                    masks = quick_filter_prune(self.model, pruning_perc)
-                else:
+                    if (1):
+                        print ('  -- [DEBUG][pruning] quick_filter_prune_v2() : ')
+                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =12, verbose=0)
+                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 14, max_conv_id =19, verbose=0)
+                        masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =19, verbose=0)
+                    else:
+                        print ('  -- [DEBUG][pruning] quick_filter_prune_v1() : ')
+                        masks = quick_filter_prune_v1(self.model, pruning_perc, verbose=0)
+                        # masks = filter_prune(self.model, pruning_perc)
+
+                elif pruning_method == 'weight':
                     masks = weight_prune(self.model, pruning_perc)
+                
                 self.model.set_masks(masks)
-                p_rate = prune_rate(self.model,pruning_method,True)
-                print(' -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
+                
+                if pruning_method == 'filter':
+                    p_rate_filter = prune_rate(self.model, 'filter',True)
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % ('filter', round(p_rate_filter,5)))
+                    # p_rate_weight = prune_rate(self.model, 'weight',True)
+                    # print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
+                elif pruning_method == 'weight':
+                    p_rate_weight = prune_rate(self.model,pruning_method,True)
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
 
                 ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)
-                valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
-                                            , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
-                                            , LOGGER, LOGGER_EPOCH=0)
-                valObj.predict(BATCH_SIZE)
+                if (0):
+                    valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss
+                                                , PASCAL_DIR, PASCAL_VALID, VAL_LOGDIR, VAL_PREFIX, VAL_OUTPUTDIR_PKL
+                                                , LOGGER, LOGGER_EPOCH=0)
+                    valObj.predict(BATCH_SIZE)
 
         for epoch in range(init_epoch, max_epochs):
             
@@ -230,7 +250,7 @@ class YOLOv2Train():
 
                 for batch_idx, (data, target) in enumerate(train_loader):
                     if (1):
-                        if (DEBUG_EPOCHS > -1):
+                        if (DEBUG_EPOCHS > -1 and epoch == 0):
                             if batch_idx > DEBUG_EPOCHS:
                                 break
 
@@ -281,16 +301,17 @@ class YOLOv2Train():
                             traceback.print_exc()
                             pdb.set_trace()
 
+
             if pruning_perc > 0:
                 print('  -- [DEBUG][pruning] pruned: %s' % prune_rate(self.model,False))
-                print('  -- [DEBUG][pruning] pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks))
-            if (epoch + 1) % 5 == 0:
+                print('  -- [DEBUG][pruning] pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks, debug=0))
+            if (epoch + 1) % 1 == 0:
                 logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
                 self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
-
-            if LOGGER != '':
+            if (1):
                 train_loss_avg = train_loss_total / len(train_loader)
                 print ('   -- train_loss_total : ', train_loss_total, ' || train_loss_avg :', train_loss_avg)
+            if LOGGER != '':
                 LOGGER.save_value('Total Loss', 'Train Loss', epoch+1, train_loss_avg)
                 LOGGER.save_value('Learning Rate', 'Learning Rate', epoch+1, LRs[epoch])
                 train_loss_total       = 0.0
@@ -298,19 +319,42 @@ class YOLOv2Train():
             self.model.seen = (epoch + 1) * len(train_loader.dataset)
 
             if (1):
-                layers = [n for n in ave_grads]
-                epoch_means = [ave_grads[n]/batch_idx for n in ave_grads]
-                f,axarr = plt.subplots(1, figsize=(15,15))
-                plt.plot(epoch_means, alpha=0.3, color="b")
-                plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
-                plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-                plt.xlim(xmin=0, xmax=len(ave_grads))
-                plt.xlabel("Layers")
-                plt.ylabel("average gradient")
-                plt.title("Gradient flow")
-                plt.grid(True)
-                plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
-                plt.close(f)
+                
+                if (1):
+                    # epoch_means = [ave_grads[n]/(batch_idx+1) for n in ave_grads]
+                    layers      = [layer_name for layer_name in ave_grads if 'conv' in layer_name]
+                    epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'conv' in layer_name]
+                    f,axarr     = plt.subplots(1, figsize=(15,15))
+                    plt.plot(epoch_means, alpha=0.3, color="b")
+                    plt.hlines(0, 0, len(layers)+1, linewidth=1, color="k" )
+                    plt.xticks(range(0,len(layers), 1), layers, rotation="vertical")
+                    plt.xlim(0, len(layers))
+                    plt.ylim(0, 0.06)
+                    plt.xlabel("Layers")
+                    plt.ylabel("Avg Gradient Flow")
+                    plt.title("Gradient flow - {0}".format(pruning_method))
+                    plt.grid(True)
+                    # plt.show()
+                    plt.savefig("%s/grad_flow-conv-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
+                    plt.close(f)
+
+                if (1):
+                    layers      = [layer_name for layer_name in ave_grads if 'bn' in layer_name]
+                    epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'bn' in layer_name]
+                    f,axarr     = plt.subplots(1, figsize=(15,15))
+                    plt.plot(epoch_means, alpha=0.3, color="b")
+                    plt.hlines(0, 0, len(layers)+1, linewidth=1, color="k" )
+                    plt.xticks(range(0,len(layers), 1), layers, rotation="vertical")
+                    plt.xlim(0, len(layers))
+                    plt.ylim(0, 0.06)
+                    plt.xlabel("Layers")
+                    plt.ylabel("Avg Gradient Flow")
+                    plt.title("Gradient flow - {0}".format(pruning_method))
+                    plt.grid(True)
+                    # plt.show()
+                    plt.savefig("%s/grad_flow-bn-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
+                    plt.close(f)
+
 
             ## ----------------------- VALIDATE ------------------------
             valObj = PASCALVOCEval(self.model, MODEL_CFG, MODEL_WEIGHT, region_loss

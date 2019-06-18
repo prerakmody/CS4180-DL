@@ -349,7 +349,7 @@ class PASCALVOCEval():
                 image_ids = [image_ids[x] for x in sorted_ind]
             except:
                 print ('  -- [ERROR][PASCALVOCEval.voc_eval()] classname : ', classname)
-                traceback.print_exc()
+                # traceback.print_exc()
 
             # go down dets and mark TPs and FPs
             nd = len(image_ids)

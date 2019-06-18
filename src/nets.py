@@ -24,7 +24,8 @@ if runtime == 'online':
     # print (' - [predict.py] Online Runtime')
     from src.nets2_utils import *
     from src.pruning.weightPruning.layers import MaskedConv2d
-    from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
+    # from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
+    from src.pruning.weightPruning.methods import filter_prune
     from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
 elif runtime == 'local':
     print (' - Local Runtime')
