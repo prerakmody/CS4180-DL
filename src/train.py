@@ -205,9 +205,9 @@ class YOLOv2Train():
                 
                 if pruning_method == 'filter':
                     p_rate_filter = prune_rate(self.model, 'filter',True)
-                    p_rate_weight = prune_rate(self.model, 'weight',True)
                     print('  -- [DEBUG][pruning] %s=pruned: %s' % ('filter', round(p_rate_filter,5)))
-                    print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
+                    # p_rate_weight = prune_rate(self.model, 'weight',True)
+                    # print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
                 elif pruning_method == 'weight':
                     p_rate_weight = prune_rate(self.model,pruning_method,True)
                     print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
@@ -291,8 +291,6 @@ class YOLOv2Train():
                                     if(p.requires_grad) and ("bias" not in n):
                                         ave_grads[n] += p.grad.abs().mean()
 
-                                # pdb.set_trace()
-
                                 if verbose:
                                     print (' - loss : ', train_loss)
 
@@ -303,10 +301,11 @@ class YOLOv2Train():
                             traceback.print_exc()
                             pdb.set_trace()
 
+
             if pruning_perc > 0:
                 print('  -- [DEBUG][pruning] pruned: %s' % prune_rate(self.model,False))
                 print('  -- [DEBUG][pruning] pruned weights consistent after retraining: %s ' % are_masks_consistent(self.model, masks, debug=0))
-            if (epoch + 1) % 5 == 0:
+            if (epoch + 1) % 1 == 0:
                 logging('save weights to %s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc , epoch+1))
                 self.model.save_weights('%s/%s-pruned-%s-retrained_%06d.weights' % (backupdir, pruning_method, pruning_perc, epoch+1))
             if (1):
@@ -327,16 +326,16 @@ class YOLOv2Train():
                     epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'conv' in layer_name]
                     f,axarr     = plt.subplots(1, figsize=(15,15))
                     plt.plot(epoch_means, alpha=0.3, color="b")
-                    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
-                    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-                    plt.xlim(0, len(ave_grads))
+                    plt.hlines(0, 0, len(layers)+1, linewidth=1, color="k" )
+                    plt.xticks(range(0,len(layers), 1), layers, rotation="vertical")
+                    plt.xlim(0, len(layers))
                     plt.ylim(0, 0.06)
                     plt.xlabel("Layers")
                     plt.ylabel("Avg Gradient Flow")
                     plt.title("Gradient flow - {0}".format(pruning_method))
                     plt.grid(True)
                     # plt.show()
-                    plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
+                    plt.savefig("%s/grad_flow-conv-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
                     plt.close(f)
 
                 if (1):
@@ -344,16 +343,16 @@ class YOLOv2Train():
                     epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'bn' in layer_name]
                     f,axarr     = plt.subplots(1, figsize=(15,15))
                     plt.plot(epoch_means, alpha=0.3, color="b")
-                    plt.hlines(0, 0, len(ave_grads)+1, linewidth=1, color="k" )
-                    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical")
-                    plt.xlim(0, len(ave_grads))
+                    plt.hlines(0, 0, len(layers)+1, linewidth=1, color="k" )
+                    plt.xticks(range(0,len(layers), 1), layers, rotation="vertical")
+                    plt.xlim(0, len(layers))
                     plt.ylim(0, 0.06)
                     plt.xlabel("Layers")
                     plt.ylabel("Avg Gradient Flow")
                     plt.title("Gradient flow - {0}".format(pruning_method))
                     plt.grid(True)
                     # plt.show()
-                    plt.savefig("%s/grad_flow-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
+                    plt.savefig("%s/grad_flow-bn-%s-pruned-%s_%06d.jpg" % (img_backupdir, pruning_method, pruning_perc, epoch+1))
                     plt.close(f)
 
 

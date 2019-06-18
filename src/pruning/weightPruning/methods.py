@@ -34,8 +34,9 @@ def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, max_conv_id=-1, v
     '''
     # Step0 - Return Value
     masks  = []
-    values_l2norm_tomas = [] # holds the L2 norms of all filters
-    values_l2norm       = []
+    values_l2norm_tomas   = [] # holds the L2 norms of all filters
+    values_l2norm         = []
+    values_l2norm_notouch = []
 
     # Step1 - Loop over all modules
     for module_obj in model.named_parameters():
@@ -66,10 +67,8 @@ def quick_filter_prune_v2(model, pruning_perc, min_conv_id=-1, max_conv_id=-1, v
                 plt.show()
 
             # Step 4 - Appending L2 norms
-            print (' - convid : ', conv_id, min_conv_id, max_conv_id)
             if conv_id > -1 and min_conv_id > 0 and max_conv_id > 0:
                 if conv_id < min_conv_id or conv_id > max_conv_id:
-                    print (' ----------- convid : ', conv_id, min_conv_id, max_conv_id)
                     continue
                 else:
                     values_l2norm           = np.concatenate((values_l2norm, value_this_layer))
