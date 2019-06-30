@@ -22,7 +22,7 @@ if (runtime == 'online'):
         from src.predict import *
         from src.nets import *
         from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
-        from src.pruning.weightPruning.methods import filter_prune, quick_filter_prune_v2, quick_filter_prune_v1
+        from src.pruning.weightPruning.methods import filter_prune, quick_filter_prune_v2, quick_filter_prune_v1, weight_prune
 
 elif runtime == 'local':
     import dataloader as dataloader
@@ -210,7 +210,7 @@ class YOLOv2Train():
                     # print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
                 elif pruning_method == 'weight':
                     p_rate_weight = prune_rate(self.model,pruning_method,True)
-                    print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate,5)))
+                    print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate_weight,5)))
 
                 ## ----------------------- VALIDATE ------------------------ (check the new mAP after pruning)
                 if (0):
