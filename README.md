@@ -21,6 +21,28 @@
  - To make the code files easier to read, comments with enumerated steps are provided 
 
 # 3. Insights
+### Filter Pruning
+- The images below are samples for 20%, 40%, 60% and 80% pruning
+    ![Filter Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_FilterPruning.png)
  - Results
-    - ![Filter Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_FilterPruning.png)
-    - ![Weight Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_WeightPruning.png)
+    | **% Pruning** |   **Model Params**    | **mAP-Pruned** | **mAP-Retrained** |
+    | :-----------: | :-------------------: | :------------: | :---------------: |
+    |       0       | 50,655,389 (202,7 MB  |     0.7001     |      0.7001       |
+    |      20       | 43,227,663 (162,6 MB) |     0.3810     |      0.6915       |
+    |      40       | 34,219,993 (131,5 MB) |     0.0976     |      0.6717       |
+    |      60       | 27,097,374 (106,5 MB) |     0.0000     |      0.5590       |
+    |      80       | 23,277,795 (92,6 MB)  |     0.0000     |      0.1600       |
+
+
+### Weight Prunings
+- The images below are samples for 70%, 75%, 80% and 90% pruning
+    ![Weight Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_WeightPruning.png)
+
+ - Results
+    | **% Pruning** |   **Model Params**    | **mAP-Pruned** | **mAP-Retrained** |
+    | :-----------: | :-------------------: | :------------: | :---------------: |
+    |       0       | 50,655,389 (202,7 MB) |     0.7001     |      0.7001       |
+    |      70       | 15,211,174 (76,6 MB)  |     0.5887     |      0.7018       |
+    |      75       | 12,679,443 (66,8 MB)  |     0.3589     |      0.7048       |
+    |      80       | 10,147,712 (56,9 MB)  |     0.0996     |      0.6970       |
+    |      90       |  5,084,256 (35,6 MB)  |     0.0000     |      0.6811       |
