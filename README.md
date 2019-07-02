@@ -25,6 +25,7 @@
 - The images below are samples for 20%, 40%, 60% and 80% pruning
     ![Filter Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_FilterPruning.png)
  - Results
+ 
     | **% Pruning** |   **Model Params**    | **mAP-Pruned** | **mAP-Retrained** |
     | :-----------: | :-------------------: | :------------: | :---------------: |
     |       0       | 50,655,389 (202,7 MB  |     0.7001     |      0.7001       |
@@ -39,6 +40,7 @@
     ![Weight Pruning](https://github.com/prerakmody/CS4180-DL/blob/feature/pre-master/demo/demo_retrain/results/ModelCompression_PASCAL2007_YOLOv2_WeightPruning.png)
 
  - Results
+ 
     | **% Pruning** |   **Model Params**    | **mAP-Pruned** | **mAP-Retrained** |
     | :-----------: | :-------------------: | :------------: | :---------------: |
     |       0       | 50,655,389 (202,7 MB) |     0.7001     |      0.7001       |
