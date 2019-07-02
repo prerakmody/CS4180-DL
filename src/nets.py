@@ -11,26 +11,15 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torch.utils.model_zoo as model_zoo
 from torchvision import models
 import torch.nn.functional as F
-
-
-
 from torch.autograd import Variable
+import torch.utils.model_zoo as model_zoo
 
-runtime = 'online' # ['local', 'online']
-if runtime == 'online':
-    # print (' - [predict.py] Online Runtime')
-    from src.nets2_utils import *
-    from src.pruning.weightPruning.layers import MaskedConv2d
-    # from src.pruning.weightPruning.methods import quick_filter_prune, weight_prune
-    from src.pruning.weightPruning.methods import filter_prune
-    from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
-elif runtime == 'local':
-    print (' - Local Runtime')
-    from nets2_utils import *
-# from pruning.weightPruning.layers import MaskedLinear
+from src.nets2_utils import *
+from src.pruning.weightPruning.layers import MaskedConv2d
+from src.pruning.weightPruning.methods import filter_prune
+from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
 
 torch.cuda.empty_cache()
 USE_GPU = torch.cuda.is_available()
@@ -193,43 +182,6 @@ def print_cfg(blocks):
 
 ## ----------------- YOLOV2 : load weights
 
-def load_conv_old(buf, start, conv_model):
-    num_w = conv_model.weight.numel()
-    num_b = conv_model.bias.numel()
-    conv_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    conv_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w])); start = start + num_w
-    return start
-
-def save_conv(fp, conv_model):
-    if conv_model.bias.is_cuda:
-        convert2cpu(conv_model.bias.data).numpy().tofile(fp)
-        convert2cpu(conv_model.weight.data).numpy().tofile(fp)
-    else:
-        conv_model.bias.data.numpy().tofile(fp)
-        conv_model.weight.data.numpy().tofile(fp)
-
-def load_conv_bn_old(buf, start, conv_model, bn_model, verbose=0):
-    num_w = conv_model.weight.numel()
-    num_b = bn_model.bias.numel()
-    if (1):
-        print ('      - conv weights : ', num_w)
-        print ('      - bias weights : ', num_b)
-        print ('      - bn_model.bias : ', bn_model.bias.shape)
-        print ('      - bn_model.weight : ', bn_model.weight.shape)
-    
-    bn_model.bias.data.copy_(torch.from_numpy(buf[start:start+num_b]));     start = start + num_b
-    bn_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    bn_model.running_mean.copy_(torch.from_numpy(buf[start:start+num_b]));  start = start + num_b
-    bn_model.running_var.copy_(torch.from_numpy(buf[start:start+num_b]));   start = start + num_b
-    
-    if (1):
-        print ('      - start : ', start)
-        print ('      - size :  ', buf[start:start+num_w].shape)
-        print ('      - shape :  ', conv_model.weight.data.shape)
-    conv_model.weight.data.copy_(torch.from_numpy(buf[start:start+num_w])); start = start + num_w 
-    
-    return start
-
 def save_conv_bn(fp, conv_model, bn_model):
     if bn_model.bias.is_cuda:
         convert2cpu(bn_model.bias.data).numpy().tofile(fp)
@@ -310,7 +262,6 @@ def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, n
         anchor_step = int(len(anchors_list)/anchors_cell)
         
         coord_mask  = torch.zeros(nB, nA, nH, nW)
-        # conf_mask   = torch.zeros(nB, nA, nH, nW) # torch.ones(nB, nA, nH, nW) * noobject_scale # [noobject_scale - why over here!!]
         conf_mask   = torch.ones(nB, nA, nH, nW) * noobject_scale
         cls_mask    = torch.zeros(nB, nA, nH, nW)
 
@@ -364,19 +315,9 @@ def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, n
             
             conf_mask[b][cur_ious.view(nA,nH,nW) > sil_thresh] = 0
 
-    ## -------------------------- STEP 2 (for tx, ty, tw, th, coord_mask) -------------------------- ##
+    ## -------------------------- STEP 2 (for earlier training iters) -------------------------- ##
     if (1):
         pass
-        # if seen < 12800:  # logic???
-        #     if anchor_step == 4: # anchor_step = len(anchors) / 5
-        #         tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-        #         ty = torch.FloatTensor(anchors).view(anchors_cell, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-        #     else:    
-        #         tx.fill_(0.5)
-        #         ty.fill_(0.5)
-        #     tw.zero_()
-        #     th.zero_()
-        #     coord_mask.fill_(1)
 
     ## -------------------------- STEP 3 (builds tx, ty, tw, th, tconf, tcls) -------------------------- ##
     if (1):
@@ -442,8 +383,6 @@ def build_targets(pred_boxes, target, anchors_list, anchors_cell, num_classes, n
                     tx[b][best_n][gj][gi]         = target[b][t*5+1] * nW - gi # gx - gi #()
                     ty[b][best_n][gj][gi]         = target[b][t*5+2] * nH - gj # gy - gj
                     
-                    # tw[b][best_n][gj][gi]         = math.log(gw/anchors_list[anchor_step*best_n])
-                    # th[b][best_n][gj][gi]         = math.log(gh/anchors_list[anchor_step*best_n+1])
                     tw[b][best_n][gj][gi]         = gw/anchors_list[anchor_step*best_n]
                     th[b][best_n][gj][gi]         = gh/anchors_list[anchor_step*best_n+1]
                     
@@ -483,7 +422,6 @@ class RegionLoss(nn.Module):
             - [similiar] https://github.com/experiencor/keras-yolo2/blob/master/frontend.py
             - [similiar] https://github.com/leeyoshinari/YOLO_v2/blob/master/yolo/yolo_v2.py
         """
-        # print ('  -- [DEBUG][RegionLoss] self.num_anchors : ', self.num_anchors)
 
     def forward(self, output, target, verbose=0):
         verbose_shapes = 0
@@ -617,16 +555,7 @@ class RegionLoss(nn.Module):
                 loss_conf = 1                * nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
                 loss_cls  = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
                 loss      = (loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls)/nB
-            else:
-                loss_x    = self.coord_scale * nn.MSELoss(size_average=False)(x*coord_mask  , tx*coord_mask)/2.0
-                loss_y    = self.coord_scale * nn.MSELoss(size_average=False)(y*coord_mask  , ty*coord_mask)/2.0
-                # Protip: adding a tiny epsilon where you’re dividing or taking square roots will probably do the trick.
-                loss_w    = self.coord_scale * nn.MSELoss(size_average=False)(torch.sqrt(w*coord_mask), torch.sqrt(tw*coord_mask))/2.0
-                loss_h    = self.coord_scale * nn.MSELoss(size_average=False)(torch.sqrt(h*coord_mask), torch.sqrt(th*coord_mask))/2.0
-                loss_conf = 1                * nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
-                loss_cls  = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls) # cls = [no_of_BBoxes, nC] || tcls = [no_of_BBoxes]
-                loss      = (loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls)/nB
-
+            
             if (verbose_loss):
                 print ('  -- [RegionLoss] loss_x :', loss_x)
                 print ('  -- [RegionLoss] loss_y :', loss_y)
@@ -637,7 +566,6 @@ class RegionLoss(nn.Module):
                 print ('  -- [RegionLoss] loss : ', loss, loss)
                 print ('  -- [RegionLoss] Total GT Boxes : ', len(tcls))
 
-                # print ('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data.item(), loss_y.data.item(), loss_w.data.item(), loss_h.data.item(), loss_conf.data.item(), loss_cls.data.item(), loss.data.item()))
                 """
                 - 3 loss elements
                     - Box Loss
@@ -650,10 +578,8 @@ class RegionLoss(nn.Module):
                         - [(class_true - class_predict)^2] * cls_mask * class_scale
                 """
         
-        # pdb.set_trace()
         return loss
-        # return loss/nB
-
+        
 ## ----------------- YOLOV2:other modules
 
 class MaxPoolStride1(nn.Module):

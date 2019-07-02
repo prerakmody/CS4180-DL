@@ -12,23 +12,12 @@ import torch.backends.cudnn as cudnn
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
-runtime = 'online' # ['local', 'online']
-
-if (runtime == 'online'):
-    # print (' - [train.py] Online Runtime')
-    import src.dataloader as dataloader
-    from src.nets2_utils import *
-    if (1):
-        from src.predict import *
-        from src.nets import *
-        from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
-        from src.pruning.weightPruning.methods import filter_prune, quick_filter_prune_v2, quick_filter_prune_v1, weight_prune
-
-elif runtime == 'local':
-    import dataloader as dataloader
-    from nets2_utils import *
-    from predict import *
-    from nets import *
+from src.nets import *
+from src.predict import *
+from src.nets2_utils import *    
+import src.dataloader as dataloader
+from src.pruning.weightPruning.utils import prune_rate, are_masks_consistent
+from src.pruning.weightPruning.methods import filter_prune, quick_filter_prune_v2, quick_filter_prune_v1, weight_prune
 
 
 def parse_cfg(cfgfile, verbose=0):
@@ -190,14 +179,11 @@ class YOLOv2Train():
                 if pruning_method == "filter":
                     if (1):
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v2() : ')
-                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =12, verbose=0)
-                        # masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 14, max_conv_id =19, verbose=0)
                         masks = quick_filter_prune_v2(self.model, pruning_perc, min_conv_id = 1, max_conv_id =19, verbose=0)
                     else:
                         print ('  -- [DEBUG][pruning] quick_filter_prune_v1() : ')
                         masks = quick_filter_prune_v1(self.model, pruning_perc, verbose=0)
-                        # masks = filter_prune(self.model, pruning_perc)
-
+                        
                 elif pruning_method == 'weight':
                     masks = weight_prune(self.model, pruning_perc)
                 
@@ -206,8 +192,6 @@ class YOLOv2Train():
                 if pruning_method == 'filter':
                     p_rate_filter = prune_rate(self.model, 'filter',True)
                     print('  -- [DEBUG][pruning] %s=pruned: %s' % ('filter', round(p_rate_filter,5)))
-                    # p_rate_weight = prune_rate(self.model, 'weight',True)
-                    # print('  -- [DEBUG][pruning] %s=pruned: %s' % ('weight', round(p_rate_weight,5)))
                 elif pruning_method == 'weight':
                     p_rate_weight = prune_rate(self.model,pruning_method,True)
                     print('  -- [DEBUG][pruning] %s=pruned: %s' % (pruning_method, round(p_rate_weight,5)))
@@ -225,9 +209,6 @@ class YOLOv2Train():
                 if epoch > 0:
                     for param_group in optimizer.param_groups:
                         param_group['lr'] = LRs[epoch]
-                # LR = 0.00001
-                #lr = self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
-                # lr = 0.00001
 
             if (1):
                 train_loader = torch.utils.data.DataLoader(
@@ -260,15 +241,10 @@ class YOLOv2Train():
                             print ('  - [INFO] target (or Y) : ', target.shape, ' || type : ', target.dtype) # = torch.Size([1, 250]) torch.float64
                             print ('  - [INFO] Total train points : ', len(train_loader), ' || nsamples : ', nsamples)
                     
-                    # if (1):
-                        #self.adjust_learning_rate(optimizer, processed_batches, learning_rate, steps, scales, self.batch_size)
-                        #processed_batches = processed_batches + 1
-                    
                     if (1):
                         if self.use_cuda:
                             data   = data.cuda()
                             target = target.float() 
-                            # target= target.cuda()
                         data, target = Variable(data), Variable(target)
 
                     if (1):
@@ -278,7 +254,6 @@ class YOLOv2Train():
                                 if (output != output).any():
                                     print ('  -- [DEBUG][train.py] We have some NaNs')
                                     pdb.set_trace()
-                                # print ((output != output).any())
                                 region_loss.seen = region_loss.seen + data.data.size(0)
                                 train_loss       = region_loss(output, target)
                                 train_loss_total += train_loss.data
@@ -294,9 +269,6 @@ class YOLOv2Train():
                                 if verbose:
                                     print (' - loss : ', train_loss)
 
-                            # for name, param in self.model.named_parameters():
-                            #     if param.requires_grad:
-                            #         print ('  -- [DEBUG] : ', name, '\t  - \t', round(param.grad.data.sum().item(),3), '   [',param.shape,']')
                         except:
                             traceback.print_exc()
                             pdb.set_trace()
@@ -321,7 +293,6 @@ class YOLOv2Train():
             if (1):
                 
                 if (1):
-                    # epoch_means = [ave_grads[n]/(batch_idx+1) for n in ave_grads]
                     layers      = [layer_name for layer_name in ave_grads if 'conv' in layer_name]
                     epoch_means = [ave_grads[layer_name]/(batch_idx+1) for layer_name in ave_grads if 'conv' in layer_name]
                     f,axarr     = plt.subplots(1, figsize=(15,15))
@@ -381,41 +352,3 @@ class YOLOv2Train():
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr/batch_size
         return lr
-
-# if __name__ == "__main__":
-#     torch.cuda.empty_cache()
-    
-#     if (torch.cuda.is_available()):
-#         if (1):
-#             DIR_MAIN         = os.path.abspath('../')
-#             print (' - 1. DIR_MAIN :  ', DIR_MAIN)
-
-#         if (1):
-#             PASCAL_DIR   = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/')
-#             PASCAL_TRAIN = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/voc_train.txt')
-#             PASCAL_VALID = os.path.join(DIR_MAIN, 'data/dataset/VOCdevkit/2007_test.txt')
-#             TRAIN_LOGDIR = os.path.join(DIR_MAIN, 'train_data')
-#             VAL_LOGDIR   = os.path.join(DIR_MAIN, 'eval_data')
-#             VAL_OUTPUTDIR_PKL = os.path.join(DIR_MAIN, 'eval_results')
-#             MODEL_CFG    = os.path.join(DIR_MAIN, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
-#             MODEL_WEIGHT = os.path.join(DIR_MAIN, 'data/weights/github_pjreddie/yolov2-voc.weights')
-#             print (' - 2. MODEL_WEIGHT :  ', MODEL_WEIGHT)
-
-#         if (1):
-#             VAL_PREFIX   = 'pretrained'
-#             BATCH_SIZE   = 1;
-#             print (' - 3. VAL_PREFIX : ', VAL_PREFIX)
-
-#         if (1):
-#             LOGGER = ''
-#             print (' - 4. Logger : ', LOGGER)
-
-
-#         if (1):
-#             trainObj = YOLOv2Train()
-#             trainObj.train(PASCAL_DIR, PASCAL_TRAIN, PASCAL_VALID, TRAIN_LOGDIR, VAL_LOGDIR, VAL_OUTPUTDIR_PKL, VAL_PREFIX
-#                         , MODEL_CFG, MODEL_WEIGHT
-#                         , BATCH_SIZE
-#                         , LOGGER)
-#     else:
-#         print (' - GPU Issues!!')

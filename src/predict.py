@@ -16,21 +16,9 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 
-runtime = 'online' # ['local', 'online']
-if runtime == 'online':
-    #print (' - [predict.py] Online Runtime')
-    if (1):
-        from src.nets import *
-        from src.dataloader import * 
-    from src.nets2_utils import *
-
-elif runtime == 'local':
-    print (' - Local Runtime')
-    from nets import *
-    from dataloader import *
-    from nets2_utils import *
-
-# from google.colab.patches import cv2_imshow
+from src.nets import *
+from src.dataloader import * 
+from src.nets2_utils import *
 
 USE_GPU = torch.cuda.is_available()
 
@@ -121,21 +109,16 @@ class PASCALVOCEval():
                 for batch_idx, (data, target) in enumerate(eval_loader):
                     pbar.update(BATCH_SIZE)
 
-                    
-                    t1 = time.time()
                     if self.USE_GPU:
                         data   = data.cuda()
                         # target = target.cuda()                        
                     data, target = Variable(data), Variable(target)
                     output       = self.MODEL(data).data
-                    t2 = time.time()
-
+                    
                     if self.LOGGER != '':
                         if self.MODEL_LOSS != None:
-                            # print (' - [DEBUG] target[target != 0.0]) : ', target[target != 0.0], ' || ', target.dtype)
                             if (len(target[target != 0.0])):
                                 try:
-                                    # print (' - [DEBUG] region_loss : ', self.MODEL_LOSS)
                                     val_loss     = self.MODEL_LOSS(output, target)
                                     val_loss_total += val_loss.data
                                     if self.verbose:
@@ -147,14 +130,11 @@ class PASCALVOCEval():
                                 print (' - No annotations : ', valid_files[lineId])
 
                     batch_boxes = get_region_boxes(output, CONF_THRESH, self.MODEL.num_classes, self.MODEL.anchors, self.MODEL.num_anchors, 0, 1)
-                    t3 = time.time()
-
+                    
                     for i in range(output.size(0)): # output.size(0) = batch_size
-                        t31 = time.time()
                         lineId        = lineId + 1
                         fileId        = os.path.basename(valid_files[lineId]).split('.')[0]
                         width, height = get_image_size(valid_files[lineId])
-                        t32 = time.time()
                         # print(valid_files[lineId])
                         boxes = batch_boxes[i]
                         boxes = nms(boxes, NMS_THRESH)
@@ -173,17 +153,9 @@ class PASCALVOCEval():
                                 prob     = box_conf * cls_conf
                                 fps[cls_id].write('%s %f %f %f %f %f\n' % (fileId, prob, x1, y1, x2, y2)) # for each class_id, write down [prob, x1,y1,x2,y2]
 
-                        t33 = time.time()
                         if (verbose):
                             print ('    -- Time : imread : ', round(t32 - t31,4), ' || boxes loop : ', round(t33 - t32, 4))
                                 
-                    t4 = time.time()
-                    # pdb.set_trace()
-                    if (0):
-                        print ('  -- [DEBUG][PASCALVOCEval] Total time  : ', round(t4 - t1,2))
-                        print ('  -- [DEBUG][PASCALVOCEval] output time :  ', round(t2 - t1,2))
-                        print ('  -- [DEBUG][PASCALVOCEval] boxes time  :  ', round(t3 - t2,2))
-                        print ('  -- [DEBUG][PASCALVOCEval] file write  :  ', round(t4 - t3,2))
 
         if self.LOGGER != '':
             if self.MODEL_LOSS != None:
@@ -415,12 +387,10 @@ class PASCALVOCEval():
             file_test_images     = os.path.join(self.PASCAL_DIR, 'VOC' + self.VOC_YEAR,'ImageSets','Main','test.txt') # file_test_images
             dir_cache            = os.path.join(self.PASCAL_DIR, 'annotations_cache') # dir_cache
             aps                  = []
+
             # The PASCAL VOC metric changed in 2010
             use_07_metric = True if int(self.VOC_YEAR) < 2010 else False
             # print (' - VOC07 metric? ' + ('Yes' if use_07_metric else 'No'))
-
-            # if not os.path.isdir(self.EVAL_OUTPUTDIR_PKL):
-            #     os.mkdir(self.EVAL_OUTPUTDIR_PKL)
 
         ## -------------------------- STEP 1 (per class AP) -------------------------- ##
         finalMAP = []
@@ -435,60 +405,8 @@ class PASCALVOCEval():
             aps += [ap]
             finalMAP.append([cls, ap])
 
-            # filename_pkl_class = os.path.join(self.EVAL_OUTPUTDIR_PKL, self.EVAL_PREFIX + cls + '.pkl')
-            # with open(filename_pkl_class, 'wb') as f:
-            #     cPickle.dump({'rec': rec, 'prec': prec, 'ap': ap}, f)
-
         ## -------------------------- STEP 2 (print results) -------------------------- ##
         df_MAP = pd.DataFrame(finalMAP, columns=['class', 'mAP'])        
-        # print('~~~~~~~~')
-        # print (df_MAP)
-        # print('~~~~~~~~')
         mAP = np.mean(aps)
         print('Mean AP = {:.4f}'.format(mAP))
         return mAP, finalMAP
-
-        # print('~~~~~~~~')
-        # print('Results:')
-        # for ap in aps:
-        #     print('{:.3f}'.format(ap))
-        # print('{:.3f}'.format(np.mean(aps)))
-        # print('~~~~~~~~')
-        # print('')
-        # print('--------------------------------------------------------------')
-        # print('Results computed with the **unofficial** Python eval code.')
-        # print('Results should be very close to the official MATLAB eval code.')
-        # print('Recompute with `./tools/reval.py --matlab ...` for your paper.')
-        # print('-- Thanks, The Management')
-        # print('--------------------------------------------------------------')
-
-
-# if __name__ == "__main__":
-#     if (1):
-#         DIR_PROJ         = os.path.abspath('../')
-
-#     if (1):
-#         MODEL            = ''
-#         MODEL_CFGFILE    = os.path.join(DIR_PROJ, 'data/cfg/github_pjreddie/yolov2-voc.cfg')
-        
-#         MODEL_WEIGHTFILE = os.path.join(DIR_PROJ, 'data/weights/github_pjreddie/yolov2-voc.weights') #['0.5' : 0.6366, '0.25' : 0.7, '0.1' : 0.7363]
-#         EVAL_PREFIX      = 'iter1_pretrained_'
-    
-#         MODEL_LOSS       = RegionLoss()
-    
-#         PASCAL_DIR       = os.path.join(DIR_PROJ, 'data/dataset/VOCdevkit/')
-#         EVAL_IMAGELIST   = os.path.join(DIR_PROJ, 'data/dataset/VOCdevkit/2007_test.txt')
-#         EVAL_OUTPUTDIR   = os.path.join(DIR_PROJ, 'eval_data')
-#         EVAL_OUTPUTDIR_PKL = os.path.join(DIR_PROJ, 'eval_results')
-    
-#     if (1): # CONF_THRESH for (confidence_box * confidence_class) 
-#         BATCH_SIZE  = 1
-#         CONF_THRESH = 0.005
-    
-#     if (1):
-#         LOGGER = ''
-    
-#     valObj = PASCALVOCEval(MODEL, MODEL_CFGFILE, MODEL_WEIGHTFILE, MODEL_LOSS 
-#                        ,PASCAL_DIR, EVAL_IMAGELIST, EVAL_OUTPUTDIR, EVAL_PREFIX, EVAL_OUTPUTDIR_PKL
-#                        , LOGGER)
-#     valObj.predict(BATCH_SIZE=BATCH_SIZE, CONF_THRESH=CONF_THRESH)
