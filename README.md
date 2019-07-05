@@ -3,8 +3,7 @@
     - Deep Neural Networks are both memory and compute intensive and hence are not a feasible option for embedded devices. Various methods for “Efficient Deep Learning” such as model pruning, model estimation, and student-teacher methods have been proposed to abate this problem for both model compression and acceleration in image classification tasks
     - Do model compression techniques such as weight and filter pruning produce similar performance gains on object detection models as they have for image classification models? In our viewpoint, similar performance gains would imply that the compressed models perform at least as good as their uncompressed counterparts. 
  - __Test Frameworks__
-    <!-- - Model : [YOLOv2](https://arxiv.org/abs/1612.08242) ([Code](https://github.com/marvis/pytorch-yolo2)) -->
-    - Model: [YOLOv2](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8100173&tag=1) ([Code](https://github.com/marvis/pytorch-yolo2))
+    - Model : [YOLOv2](https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=8100173&tag=1) ([Code](https://github.com/marvis/pytorch-yolo2))
     - Dataset : [PASCAL VOC 2007](http://host.robots.ox.ac.uk/pascal/VOC/voc2007/) 
  - __Methods__ : 
     - [Weight pruning : Learning both Weights and Connections for Efficient Neural Networks, NIPS, 2015 (Han et.al)](https://dl.acm.org/citation.cfm?id=2969366)
