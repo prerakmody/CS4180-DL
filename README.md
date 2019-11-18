@@ -1,4 +1,4 @@
-# 1. Topic - Efficient Deep Learning - Model Compression via pruning forobject detection
+# 1. Topic - Efficient Deep Learning - Model Compression via pruning for object detection
  - __Problem Statement__
     - Deep Neural Networks are both memory and compute intensive and hence are not a feasible option for embedded devices. Various methods for “Efficient Deep Learning” such as model pruning, model estimation, and student-teacher methods have been proposed to abate this problem for both model compression and acceleration in image classification tasks
     - Do model compression techniques such as weight and filter pruning produce similar performance gains on object detection models as they have for image classification models? In our viewpoint, similar performance gains would imply that the compressed models perform at least as good as their uncompressed counterparts. 
